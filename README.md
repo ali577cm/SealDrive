@@ -16,8 +16,9 @@ On first launch it asks for your Overdrive address (e.g. `http://100.x.x.x:8080`
 
 ## Widget
 A 4x2 home-screen widget shows charge level, lock/door state, windows, sentry status and average daily kWh (last 7 days).
-Tap the refresh icon to update it; tap anywhere else to open the app. It only makes read-only requests, never stores a
-password or token (it reuses the login the app's browser view already holds), and does no background polling.
+Tap the refresh icon to update it; tap anywhere else to open the app. The status widgets only make read-only requests. A separate 1x1 "climate" widget sends ONE command to the car (set cabin
+temperature) and only when you tap it. None of them store a password or token (they reuse the login the app's browser view
+already holds).
 Sign in once inside the app first; if the login expires the widget says "Open app to sign in".
 
 ## Updates

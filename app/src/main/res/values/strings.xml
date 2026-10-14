@@ -3,4 +3,5 @@
     <string name="widget_refresh">Check connection</string>
     <string name="shortcut_settings">Settings &amp; updates</string>
     <string name="widget_small_desc">Compact strip: charge, locks, windows, sentry and energy use</string>
+    <string name="widget_climate_desc">Tap to set the car's cabin temperature</string>
 </resources>

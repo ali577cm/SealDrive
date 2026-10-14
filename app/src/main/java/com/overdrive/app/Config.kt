@@ -11,6 +11,16 @@ object Config {
 
     fun setBg(c: Context, v: Int) { prefs(c).edit().putInt("bg", v).apply() }
 
+    /** Temperature (C) the 1x1 climate button sets. */
+    fun climateTemp(c: Context): Float = prefs(c).getFloat("climate", 21f)
+
+    fun setClimateTemp(c: Context, raw: String): Boolean {
+        val v = raw.trim().replace(',', '.').toFloatOrNull() ?: return false
+        if (v < 17f || v > 33f) return false
+        prefs(c).edit().putFloat("climate", v).apply()
+        return true
+    }
+
     /** Electricity price in pence per kWh (default 9p). */
     fun pence(c: Context): Float = prefs(c).getFloat("pence", 9f)
 

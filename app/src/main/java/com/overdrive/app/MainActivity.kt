@@ -124,6 +124,12 @@ class MainActivity : Activity() {
             setText(Config.pence(this@MainActivity).toString().removeSuffix(".0"))
             setSingleLine()
         }
+        val tempInput = EditText(this).apply {
+            hint = "Climate button temperature (°C)"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(Config.climateTemp(this@MainActivity).toString().removeSuffix(".0"))
+            setSingleLine()
+        }
         val bgSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
                 arrayOf("Widget background: Transparent", "Widget background: Glass", "Widget background: Solid"))
@@ -135,11 +141,12 @@ class MainActivity : Activity() {
             setPadding(pad, 0, pad, 0)
             addView(input)
             addView(priceInput)
+            addView(tempInput)
             addView(bgSpinner)
         }
         val d = AlertDialog.Builder(this)
             .setTitle("Overdrive address")
-            .setMessage("Enter the address of your Overdrive page and your electricity price. Both are stored only on this phone.")
+            .setMessage("Enter the address of your Overdrive page, your electricity price and the climate button temperature. All are stored only on this phone.")
             .setView(box)
             .setCancelable(url != null)
             .setPositiveButton("Save") { _, _ ->
@@ -149,6 +156,9 @@ class MainActivity : Activity() {
                     askAddress()
                 } else {
                     Config.setBg(this, bgSpinner.selectedItemPosition)
+                    if (!Config.setClimateTemp(this, tempInput.text.toString()))
+                        Toast.makeText(this, "Climate temperature not saved - use 17 to 33", Toast.LENGTH_LONG).show()
+                    SealDriveClimateWidget.redraw(this)
                     if (!Config.setPence(this, priceInput.text.toString()))
                         Toast.makeText(this, "Price not saved - enter pence per kWh, e.g. 9", Toast.LENGTH_LONG).show()
                     url = saved
