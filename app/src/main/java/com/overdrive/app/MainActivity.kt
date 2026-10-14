@@ -22,6 +22,8 @@ class MainActivity : Activity() {
 
     private var url: String? = null
     private var failCount = 0
+    private var lastCheck = 0L
+    private var updateDialogShowing = false
     private lateinit var web: WebView
     private lateinit var refresh: SwipeRefreshLayout
     private val handler = Handler(Looper.getMainLooper())
@@ -89,8 +91,19 @@ class MainActivity : Activity() {
         if (savedInstanceState != null) web.restoreState(savedInstanceState) else {
             val u = url
             if (u == null) askAddress() else web.loadUrl(u)
-            checkForUpdate()
         }
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    /** Launcher shortcut "Settings & updates" opens the address / update dialog. */
+    private fun handleIntent(i: Intent?) {
+        if (i?.action == "com.overdrive.app.SETTINGS") askAddress()
     }
 
     /** Prompts for the Overdrive address and stores it on the device only. */
@@ -120,31 +133,56 @@ class MainActivity : Activity() {
                 }
             }
         if (url != null) d.setNegativeButton("Cancel", null)
+        d.setNeutralButton("Check for updates") { _, _ -> checkForUpdate(manual = true) }
         d.show()
     }
 
-    private fun checkForUpdate() = thread {
-        val r = Updater.fetchLatest() ?: return@thread
-        if (r.code <= Updater.installedCode(this)) return@thread
-        runOnUiThread {
-            if (isFinishing) return@runOnUiThread
-            AlertDialog.Builder(this)
-                .setTitle("Update available")
-                .setMessage("A new version of SealDrive is ready to install.")
-                .setPositiveButton("Update") { _, _ ->
-                    Toast.makeText(this, "Downloading update…", Toast.LENGTH_SHORT).show()
-                    thread {
-                        val apk = Updater.download(this, r)
-                        runOnUiThread {
-                            if (apk == null) Toast.makeText(this, "Download failed", Toast.LENGTH_LONG).show()
-                            else if (!Updater.install(this, apk))
-                                Toast.makeText(this, "Allow installs from this app, then tap Update again next launch", Toast.LENGTH_LONG).show()
+    /** Looks for a newer release. [manual] = user asked, so report "up to date" and failures too. */
+    private fun checkForUpdate(manual: Boolean = false) {
+        lastCheck = System.currentTimeMillis()
+        thread {
+            val res = Updater.check()
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                val r = res.release
+                when {
+                    r == null -> if (manual) Toast.makeText(this, "Update check failed: ${res.error}", Toast.LENGTH_LONG).show()
+                    r.code <= Updater.installedCode(this) ->
+                        if (manual) Toast.makeText(this, "SealDrive is up to date (build ${Updater.installedCode(this)})", Toast.LENGTH_LONG).show()
+                    else -> showUpdateDialog(r)
+                }
+            }
+        }
+    }
+
+    private fun showUpdateDialog(r: Updater.Release) {
+        if (updateDialogShowing) return
+        updateDialogShowing = true
+        AlertDialog.Builder(this)
+            .setTitle("Update available")
+            .setMessage("A new version of SealDrive (build ${r.code}) is ready to install.")
+            .setPositiveButton("Update") { _, _ ->
+                Toast.makeText(this, "Downloading update…", Toast.LENGTH_SHORT).show()
+                thread {
+                    val apk = Updater.download(this, r)
+                    runOnUiThread {
+                        if (apk == null) {
+                            Toast.makeText(this, "Download failed - opening the download page", Toast.LENGTH_LONG).show()
+                            openReleasePage()
+                        } else if (!Updater.install(this, apk)) {
+                            Toast.makeText(this, "Allow installs from SealDrive, then use Check for updates again", Toast.LENGTH_LONG).show()
                         }
                     }
                 }
-                .setNegativeButton("Later", null)
-                .show()
-        }
+            }
+            .setNeutralButton("Browser") { _, _ -> openReleasePage() }
+            .setNegativeButton("Later", null)
+            .setOnDismissListener { updateDialogShowing = false }
+            .show()
+    }
+
+    private fun openReleasePage() {
+        try { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Updater.RELEASES))) } catch (_: Exception) {}
     }
 
     private fun errorHtml(msg: String): String {
@@ -171,7 +209,12 @@ class MainActivity : Activity() {
 
     override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); hideSystemUi() }
 
-    override fun onResume() { super.onResume(); web.onResume(); if (failed) url?.let { web.loadUrl(it) } }
+    override fun onResume() {
+        super.onResume()
+        web.onResume()
+        if (failed) url?.let { web.loadUrl(it) }
+        if (System.currentTimeMillis() - lastCheck > 6 * 3600_000L) checkForUpdate()
+    }
     override fun onPause() { web.onPause(); CookieManager.getInstance().flush(); super.onPause() }
     override fun onSaveInstanceState(out: Bundle) { super.onSaveInstanceState(out); web.saveState(out) }
 

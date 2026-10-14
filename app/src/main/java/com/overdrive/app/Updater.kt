@@ -24,24 +24,49 @@ object Updater {
         return uri.scheme == "https" && (h == "github.com" || h.endsWith(".githubusercontent.com"))
     }
 
-    /** Latest release, or null if offline / repo private / no APK attached. */
-    fun fetchLatest(): Release? {
+    const val RELEASES = "https://github.com/ali577cm/SealDrive/releases/latest"
+    private const val APK_URL = "$RELEASES/download/SealDrive.apk"
+
+    class Check(val release: Release?, val error: String?)
+
+    /**
+     * Finds the newest release. First tries the plain release page (its redirect names the tag; no API rate limit),
+     * then falls back to the GitHub API. On failure, [Check.error] says why.
+     */
+    fun check(): Check {
+        var err = "unknown error"
+        try {
+            val c = URL(RELEASES).openConnection() as HttpURLConnection
+            c.instanceFollowRedirects = false
+            c.connectTimeout = 6000
+            c.readTimeout = 8000
+            val code = c.responseCode
+            val loc = c.getHeaderField("Location")
+            c.disconnect()
+            if (code in 300..399 && loc != null) {
+                val n = loc.substringAfterLast("/").filter { it.isDigit() }.toIntOrNull()
+                if (n != null) return Check(Release(n, APK_URL), null)
+                err = "unexpected redirect"
+            } else err = "release page HTTP $code"
+        } catch (e: Exception) { err = "${e.javaClass.simpleName}: ${e.message ?: ""}" }
+
         try {
             val c = URL(API).openConnection() as HttpURLConnection
-            c.connectTimeout = 5000
+            c.connectTimeout = 6000
             c.readTimeout = 8000
             c.setRequestProperty("Accept", "application/vnd.github+json")
-            if (c.responseCode != 200) return null
-            val j = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
-            val code = j.getString("tag_name").filter { it.isDigit() }.toIntOrNull() ?: return null
-            val assets = j.getJSONArray("assets")
-            for (i in 0 until assets.length()) {
-                val a = assets.getJSONObject(i)
-                if (a.getString("name").endsWith(".apk") && trusted(a.getString("browser_download_url")))
-                    return Release(code, a.getString("browser_download_url"))
-            }
-        } catch (_: Exception) {}
-        return null
+            if (c.responseCode == 200) {
+                val j = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+                val code = j.getString("tag_name").filter { it.isDigit() }.toIntOrNull()
+                val assets = j.getJSONArray("assets")
+                for (i in 0 until assets.length()) {
+                    val a = assets.getJSONObject(i)
+                    if (code != null && a.getString("name").endsWith(".apk") && trusted(a.getString("browser_download_url")))
+                        return Check(Release(code, a.getString("browser_download_url")), null)
+                }
+            } else err += "; API HTTP ${c.responseCode}"
+        } catch (e: Exception) { err += "; API ${e.javaClass.simpleName}" }
+        return Check(null, err)
     }
 
     @Suppress("DEPRECATION")
