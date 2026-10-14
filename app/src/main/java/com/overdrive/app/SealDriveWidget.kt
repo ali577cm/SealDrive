@@ -137,7 +137,7 @@ class SealDriveWidget : AppWidgetProvider() {
                     val avg = s.avgKwhPerDay?.let { Chip("%.1f kWh".format(it), PLAIN) } ?: Chip("—", DIM)
                     val cap = s.avgKwhPerDay?.let { "Avg ${money(it * Config.pence(ctx))}/day" } ?: "Avg / day"
                     save(ctx, "Updated ${time()}", s.soc?.toInt() ?: -1,
-                        s.rangeKm?.let { "${it.toInt()} km range" } ?: "",
+                        s.rangeKm?.let { "${Math.round(it * 0.621371)} mi range" } ?: "",
                         s.locked == 2 && s.doorsOpen == 0, listOf(lock, win, sentry, avg), cap)
                 }
             }
