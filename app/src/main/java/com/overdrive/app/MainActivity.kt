@@ -130,6 +130,12 @@ class MainActivity : Activity() {
             setText(Config.climateTemp(this@MainActivity).toString().removeSuffix(".0"))
             setSingleLine()
         }
+        val minInput = EditText(this).apply {
+            hint = "Climate run time (10, 15, 20, 25 or 30 min)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(Config.climateMinutes(this@MainActivity).toString())
+            setSingleLine()
+        }
         val bgSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
                 arrayOf("Widget background: Transparent", "Widget background: Glass", "Widget background: Solid"))
@@ -142,11 +148,12 @@ class MainActivity : Activity() {
             addView(input)
             addView(priceInput)
             addView(tempInput)
+            addView(minInput)
             addView(bgSpinner)
         }
         val d = AlertDialog.Builder(this)
             .setTitle("Overdrive address")
-            .setMessage("Enter the address of your Overdrive page, your electricity price and the climate button temperature. All are stored only on this phone.")
+            .setMessage("Enter the address of your Overdrive page, your electricity price and the climate button temperature and run time. All are stored only on this phone.")
             .setView(box)
             .setCancelable(url != null)
             .setPositiveButton("Save") { _, _ ->
@@ -158,6 +165,8 @@ class MainActivity : Activity() {
                     Config.setBg(this, bgSpinner.selectedItemPosition)
                     if (!Config.setClimateTemp(this, tempInput.text.toString()))
                         Toast.makeText(this, "Climate temperature not saved - use 17 to 33", Toast.LENGTH_LONG).show()
+                    if (!Config.setClimateMinutes(this, minInput.text.toString()))
+                        Toast.makeText(this, "Run time not saved - use 10, 15, 20, 25 or 30", Toast.LENGTH_LONG).show()
                     SealDriveClimateWidget.redraw(this)
                     if (!Config.setPence(this, priceInput.text.toString()))
                         Toast.makeText(this, "Price not saved - enter pence per kWh, e.g. 9", Toast.LENGTH_LONG).show()

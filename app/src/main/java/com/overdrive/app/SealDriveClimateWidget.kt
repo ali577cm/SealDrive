@@ -12,7 +12,7 @@ import java.text.DateFormat
 import java.util.Date
 import kotlin.concurrent.thread
 
-/** 1x1 button: tap to set the car's cabin temperature (default 21 C; change it in Settings & updates). */
+/** 1x1 button: tap to turn the car's climate on at a set temperature (default 21 C for 20 min; see Settings & updates). */
 class SealDriveClimateWidget : AppWidgetProvider() {
 
     companion object {
@@ -27,7 +27,7 @@ class SealDriveClimateWidget : AppWidgetProvider() {
                 busy -> "Sending…" to "#9FB3C8"
                 p.getString("state", "") == "ok" -> (p.getString("status", "") ?: "") to "#2BD4A7"
                 p.getString("state", "") == "fail" -> (p.getString("status", "") ?: "") to "#FF8A8A"
-                else -> "Tap to set" to "#8FA6BD"
+                else -> "Tap to start" to "#8FA6BD"
             }
             val tap = PendingIntent.getBroadcast(ctx, 2,
                 Intent(ctx, SealDriveClimateWidget::class.java).setAction(ACTION_SET),
@@ -75,11 +75,11 @@ class SealDriveClimateWidget : AppWidgetProvider() {
         thread {
             try {
                 val temp = Config.climateTemp(ctx)
-                val r = CarCommand.setClimateTemp(ctx, temp.toDouble())
+                val r = CarCommand.startClimate(ctx, temp.toDouble(), Config.climateMinutes(ctx))
                 val stamp = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())
                 p.edit()
                     .putString("state", if (r.ok) "ok" else "fail")
-                    .putString("status", if (r.ok) "Set ✓ $stamp" else r.message)
+                    .putString("status", if (r.ok) "On ✓ $stamp" else r.message)
                     .putLong("busyAt", 0L)
                     .apply()
                 redraw(ctx)

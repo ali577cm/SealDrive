@@ -21,6 +21,16 @@ object Config {
         return true
     }
 
+    /** How long the climate runs after the button is tapped (Overdrive accepts 10, 15, 20, 25 or 30). */
+    fun climateMinutes(c: Context): Int = prefs(c).getInt("climateMin", 20)
+
+    fun setClimateMinutes(c: Context, raw: String): Boolean {
+        val v = raw.trim().toIntOrNull() ?: return false
+        if (v !in listOf(10, 15, 20, 25, 30)) return false
+        prefs(c).edit().putInt("climateMin", v).apply()
+        return true
+    }
+
     /** Electricity price in pence per kWh (default 9p). */
     fun pence(c: Context): Float = prefs(c).getFloat("pence", 9f)
 
