@@ -115,8 +115,8 @@
 
                 <ImageView
                     android:id="@+id/chip_lock_icon"
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
                     android:importantForAccessibility="no"
                     android:src="@drawable/ic_lock" />
 
@@ -160,8 +160,8 @@
 
                 <ImageView
                     android:id="@+id/chip_win_icon"
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
                     android:importantForAccessibility="no"
                     android:src="@drawable/ic_window" />
 
@@ -213,8 +213,8 @@
 
                 <ImageView
                     android:id="@+id/chip_sen_icon"
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
                     android:importantForAccessibility="no"
                     android:src="@drawable/ic_shield" />
 
@@ -258,8 +258,8 @@
 
                 <ImageView
                     android:id="@+id/chip_avg_icon"
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
                     android:importantForAccessibility="no"
                     android:src="@drawable/ic_bolt" />
 
