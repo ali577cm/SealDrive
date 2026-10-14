@@ -23,15 +23,20 @@ class SealDriveWidget : AppWidgetProvider() {
         private const val GOOD = "#2BD4A7"
         private const val WARN = "#FFC857"
         private const val BAD = "#FF8A8A"
-        private const val DIM = "#9FB3C8"
+        private const val DIM = "#8FA6BD"
+        private const val PLAIN = "#E6EEF7"
 
-        private val TEXT_IDS = intArrayOf(R.id.widget_charge, R.id.widget_lock, R.id.widget_windows, R.id.widget_sentry, R.id.widget_avg)
+        private val VAL_IDS = intArrayOf(R.id.chip_lock_val, R.id.chip_win_val, R.id.chip_sen_val, R.id.chip_avg_val)
+        private val ICON_IDS = intArrayOf(R.id.chip_lock_icon, R.id.chip_win_icon, R.id.chip_sen_icon, R.id.chip_avg_icon)
 
         private fun prefs(c: Context) = c.getSharedPreferences("widget", Context.MODE_PRIVATE)
 
-        private fun save(c: Context, sub: String, lines: List<Pair<String, String>>) {
-            val e = prefs(c).edit().putString("sub", sub)
-            lines.forEachIndexed { i, (t, k) -> e.putString("t$i", t).putString("k$i", k) }
+        private class Chip(val text: String, val color: String)
+
+        private fun save(c: Context, sub: String, soc: Int, range: String, unlocked: Boolean, chips: List<Chip>) {
+            val e = prefs(c).edit().putString("sub", sub).putInt("soc", soc).putString("range", range)
+                .putBoolean("unlocked", unlocked)
+            chips.forEachIndexed { i, ch -> e.putString("v$i", ch.text).putString("k$i", ch.color) }
             e.apply()
         }
 
@@ -42,11 +47,19 @@ class SealDriveWidget : AppWidgetProvider() {
             val refresh = PendingIntent.getBroadcast(ctx, 1,
                 Intent(ctx, SealDriveWidget::class.java).setAction(ACTION_REFRESH),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            val soc = p.getInt("soc", -1)
             return RemoteViews(ctx.packageName, R.layout.widget).apply {
                 setTextViewText(R.id.widget_sub, if (checking) "Checking…" else p.getString("sub", "Tap ⟳ to check"))
-                TEXT_IDS.forEachIndexed { i, id ->
-                    setTextViewText(id, p.getString("t$i", "—"))
-                    setTextColor(id, Color.parseColor(p.getString("k$i", DIM)))
+                setTextViewText(R.id.widget_soc, if (soc >= 0) "$soc" else "--")
+                setTextColor(R.id.widget_soc, Color.parseColor(if (soc in 0..14) BAD else if (soc in 15..29) WARN else "#FFFFFF"))
+                setTextViewText(R.id.widget_range, p.getString("range", ""))
+                setProgressBar(R.id.widget_bar, 100, soc.coerceAtLeast(0), false)
+                setImageViewResource(R.id.chip_lock_icon, if (p.getBoolean("unlocked", false)) R.drawable.ic_lock_open else R.drawable.ic_lock)
+                for (i in VAL_IDS.indices) {
+                    val color = Color.parseColor(p.getString("k$i", DIM))
+                    setTextViewText(VAL_IDS[i], p.getString("v$i", "—"))
+                    setTextColor(VAL_IDS[i], color)
+                    setInt(ICON_IDS[i], "setColorFilter", color)
                 }
                 setOnClickPendingIntent(R.id.widget_root, open)
                 setOnClickPendingIntent(R.id.widget_refresh, refresh)
@@ -61,37 +74,34 @@ class SealDriveWidget : AppWidgetProvider() {
 
         private fun time() = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())
 
-        private fun blank() = List(5) { "—" to DIM }
+        private fun blank() = List(4) { Chip("—", DIM) }
 
         private fun store(ctx: Context, r: CarStatus.Result) {
             when (r) {
-                is CarStatus.Result.NoAddress -> save(ctx, "Set address in app", blank())
-                is CarStatus.Result.SignIn -> save(ctx, "Open app to sign in", blank())
-                is CarStatus.Result.Offline -> save(ctx, "Car offline · ${time()}", blank())
-                is CarStatus.Result.NoData -> save(ctx, "No car data · ${time()}", blank())
+                is CarStatus.Result.NoAddress -> save(ctx, "Set address in app", -1, "", false, blank())
+                is CarStatus.Result.SignIn -> save(ctx, "Open app to sign in", -1, "", false, blank())
+                is CarStatus.Result.Offline -> save(ctx, "Car offline · ${time()}", -1, "", false, blank())
+                is CarStatus.Result.NoData -> save(ctx, "No car data · ${time()}", -1, "", false, blank())
                 is CarStatus.Result.Ok -> {
                     val s = r.s
-                    val charge = s.soc?.let {
-                        val txt = "🔋 ${it.toInt()}%" + (s.rangeKm?.let { km -> " · ${km.toInt()} km" } ?: "")
-                        txt to (if (it >= 30) GOOD else if (it >= 15) WARN else BAD)
-                    } ?: ("🔋 —" to DIM)
                     val lock = when {
-                        s.doorsOpen > 0 -> "🚪 ${s.doorsOpen} door${if (s.doorsOpen > 1) "s" else ""} open" to WARN
-                        s.locked == 1 -> "🔒 Locked" to GOOD
-                        s.locked == 2 -> "🔓 Unlocked" to BAD
-                        else -> "🔒 Unknown" to DIM
+                        s.doorsOpen > 0 -> Chip("${s.doorsOpen} open", WARN)
+                        s.locked == 1 -> Chip("Locked", GOOD)
+                        s.locked == 2 -> Chip("Unlocked", BAD)
+                        else -> Chip("Unknown", DIM)
                     }
-                    val win = s.windowsOpen?.let {
-                        if (it == 0) "🪟 Closed" to GOOD else "🪟 $it open" to WARN
-                    } ?: ("🪟 Unknown" to DIM)
+                    val win = s.windowsOpen?.let { if (it == 0) Chip("Closed", GOOD) else Chip("$it open", WARN) }
+                        ?: Chip("Unknown", DIM)
                     val sentry = when {
-                        s.sentryOn == null -> "🛡 Sentry —" to DIM
-                        s.sentryOn && s.sentryRecording -> "🛡 Sentry rec" to WARN
-                        s.sentryOn -> "🛡 Sentry on" to GOOD
-                        else -> "🛡 Sentry off" to WARN
+                        s.sentryOn == null -> Chip("—", DIM)
+                        s.sentryOn && s.sentryRecording -> Chip("Recording", GOOD)
+                        s.sentryOn -> Chip("On", GOOD)
+                        else -> Chip("Off", WARN)
                     }
-                    val avg = s.avgKwhPerDay?.let { "⚡ %.1f kWh/day".format(it) to DIM } ?: ("⚡ —" to DIM)
-                    save(ctx, "Updated ${time()}", listOf(charge, lock, win, sentry, avg))
+                    val avg = s.avgKwhPerDay?.let { Chip("%.1f kWh".format(it), PLAIN) } ?: Chip("—", DIM)
+                    save(ctx, "Updated ${time()}", s.soc?.toInt() ?: -1,
+                        s.rangeKm?.let { "${it.toInt()} km range" } ?: "",
+                        s.locked == 2 && s.doorsOpen == 0, listOf(lock, win, sentry, avg))
                 }
             }
         }
