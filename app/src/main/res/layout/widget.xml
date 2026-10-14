@@ -26,6 +26,10 @@
 
             <TextView
                 android:id="@+id/widget_soc"
+                android:shadowColor="#B3000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="4"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:includeFontPadding="false"
@@ -39,12 +43,20 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="2dp"
                 android:text="%"
+                android:shadowColor="#B3000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="4"
                 android:textColor="#8FA6BD"
                 android:textSize="16sp" />
         </LinearLayout>
 
         <TextView
             android:id="@+id/widget_range"
+            android:shadowColor="#B3000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="4"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:maxLines="1"
@@ -69,6 +81,10 @@
 
             <TextView
                 android:id="@+id/widget_sub"
+            android:shadowColor="#B3000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="4"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"

@@ -54,6 +54,11 @@ class SealDriveWidget : AppWidgetProvider() {
                 setTextViewText(R.id.widget_sub, if (checking) "Checking…" else p.getString("sub", "Tap ⟳ to check"))
                 setTextViewText(R.id.widget_soc, if (soc >= 0) "$soc" else "--")
                 setTextColor(R.id.widget_soc, Color.parseColor(if (soc in 0..14) BAD else if (soc in 15..29) WARN else "#FFFFFF"))
+                setInt(R.id.widget_root, "setBackgroundResource", when (Config.bg(ctx)) {
+                    0 -> R.drawable.widget_bg_clear
+                    1 -> R.drawable.widget_bg_glass
+                    else -> R.drawable.widget_bg
+                })
                 setTextViewText(R.id.widget_range, p.getString("range", ""))
                 setTextViewText(R.id.chip_avg_cap, p.getString("cap", "Avg / day"))
                 setProgressBar(R.id.widget_bar, 100, soc.coerceAtLeast(0), false)

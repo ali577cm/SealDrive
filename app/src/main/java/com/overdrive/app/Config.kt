@@ -6,6 +6,11 @@ import android.content.Context
 object Config {
     private fun prefs(c: Context) = c.getSharedPreferences("overdrive", Context.MODE_PRIVATE)
 
+    /** Widget background: 0 = transparent (default), 1 = glass, 2 = solid. */
+    fun bg(c: Context): Int = prefs(c).getInt("bg", 0)
+
+    fun setBg(c: Context, v: Int) { prefs(c).edit().putInt("bg", v).apply() }
+
     /** Electricity price in pence per kWh (default 9p). */
     fun pence(c: Context): Float = prefs(c).getFloat("pence", 9f)
 

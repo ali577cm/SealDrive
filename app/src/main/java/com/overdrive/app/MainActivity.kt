@@ -6,7 +6,9 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.text.InputType
 import android.widget.EditText
+import android.widget.ArrayAdapter
 import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.Toast
 import kotlin.concurrent.thread
 import android.graphics.Bitmap
@@ -122,12 +124,18 @@ class MainActivity : Activity() {
             setText(Config.pence(this@MainActivity).toString().removeSuffix(".0"))
             setSingleLine()
         }
+        val bgSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                arrayOf("Widget background: Transparent", "Widget background: Glass", "Widget background: Solid"))
+            setSelection(Config.bg(this@MainActivity).coerceIn(0, 2))
+        }
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val pad = (20 * resources.displayMetrics.density).toInt()
             setPadding(pad, 0, pad, 0)
             addView(input)
             addView(priceInput)
+            addView(bgSpinner)
         }
         val d = AlertDialog.Builder(this)
             .setTitle("Overdrive address")
@@ -140,6 +148,7 @@ class MainActivity : Activity() {
                     Toast.makeText(this, "That doesn't look like a valid address", Toast.LENGTH_LONG).show()
                     askAddress()
                 } else {
+                    Config.setBg(this, bgSpinner.selectedItemPosition)
                     if (!Config.setPence(this, priceInput.text.toString()))
                         Toast.makeText(this, "Price not saved - enter pence per kWh, e.g. 9", Toast.LENGTH_LONG).show()
                     url = saved
