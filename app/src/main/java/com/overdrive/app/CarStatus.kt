@@ -22,6 +22,8 @@ object CarStatus {
         val windowsOpen: Int?,      // null = unknown
         val sentryOn: Boolean?, val sentryRecording: Boolean,
         val avgKwhPerDay: Double?,
+        val charging: Boolean = false,
+        val chargeEtaMin: Int? = null,      // minutes to full while charging
     )
 
     sealed class Result {
@@ -143,10 +145,12 @@ object CarStatus {
         // sentry + trips in parallel with the main state call
         var sentryResp: Resp? = null
         var avg: Double? = null
+        var statusResp: Resp? = null
         val t1 = thread { sentryResp = get(base, "/api/surveillance/status", cookie) }
+        val t3 = thread { statusResp = get(base, "/status", cookie, 8000) }
         val t2 = thread { avg = try { averageKwhPerDay(ctx, base, cookie) } catch (_: Exception) { null } }
         val state = get(base, "/api/vehicle/state", cookie)
-        t1.join(); t2.join()
+        t1.join(); t2.join(); t3.join()
 
         if (state == null || state.code == -1) return Result.Offline(state?.err ?: "no response")
         val j = state.json ?: return Result.SignIn(if (state.code == 200) "got a web page" else "HTTP ${state.code}")
@@ -176,6 +180,11 @@ object CarStatus {
         val sentryOn = st?.let { if (it.has("enabled")) it.optBoolean("enabled") else null }
         val sentryRec = st?.optBoolean("recording", false) ?: false
 
-        return Result.Ok(Snapshot(soc, range, locked, doorsOpen, if (winKnown) winOpen else null, sentryOn, sentryRec, avg))
+        val ch = statusResp?.json?.optJSONObject("charging")
+        val charging = ch?.optBoolean("charging", false) ?: false
+        val eta = ch?.optInt("timeToFullMin", -1)?.takeIf { it > 0 }
+
+        return Result.Ok(Snapshot(soc, range, locked, doorsOpen, if (winKnown) winOpen else null, sentryOn, sentryRec, avg,
+            charging, if (charging) eta else null))
     }
 }

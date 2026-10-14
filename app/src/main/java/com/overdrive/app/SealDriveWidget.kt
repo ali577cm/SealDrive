@@ -38,9 +38,9 @@ open class SealDriveWidget : AppWidgetProvider() {
 
         private class Chip(val text: String, val color: String)
 
-        private fun save(c: Context, sub: String, soc: Int, range: String, unlocked: Boolean, chips: List<Chip>, cap: String = "Avg / day") {
+        private fun save(c: Context, sub: String, soc: Int, range: String, unlocked: Boolean, chips: List<Chip>, cap: String = "Avg / day", capS: String = "per day", rangeS: String = "") {
             val e = prefs(c).edit().putString("sub", sub).putInt("soc", soc).putString("range", range)
-                .putBoolean("unlocked", unlocked).putString("cap", cap)
+                .putBoolean("unlocked", unlocked).putString("cap", cap).putString("capS", capS).putString("rangeS", rangeS)
             chips.forEachIndexed { i, ch -> e.putString("v$i", ch.text).putString("k$i", ch.color) }
             e.apply()
         }
@@ -62,9 +62,9 @@ open class SealDriveWidget : AppWidgetProvider() {
                     1 -> R.drawable.widget_bg_glass
                     else -> R.drawable.widget_bg
                 })
-                setTextViewText(R.id.widget_range, p.getString("range", ""))
+                setTextViewText(R.id.widget_range, if (compact) p.getString("rangeS", "") else p.getString("range", ""))
+                setTextViewText(R.id.chip_avg_cap, if (compact) p.getString("capS", "per day") else p.getString("cap", "Avg / day"))
                 if (!compact) {
-                    setTextViewText(R.id.chip_avg_cap, p.getString("cap", "Avg / day"))
                     setProgressBar(R.id.widget_bar, 100, soc.coerceAtLeast(0), false)
                 }
                 setImageViewResource(R.id.chip_lock_icon, if (p.getBoolean("unlocked", false)) R.drawable.ic_lock_open else R.drawable.ic_lock)
@@ -120,6 +120,9 @@ open class SealDriveWidget : AppWidgetProvider() {
         /** Pence -> "88p" or "£1.05". */
         private fun money(pence: Double) = if (pence >= 100) "£%.2f".format(pence / 100) else "${Math.round(pence)}p"
 
+        /** Minutes -> "1h 20m" / "45m". */
+        private fun eta(min: Int?): String? = min?.let { if (it >= 60) "${it / 60}h ${it % 60}m" else "${it}m" }
+
         private fun blank() = List(4) { Chip("—", DIM) }
 
         private fun store(ctx: Context, r: CarStatus.Result) {
@@ -145,10 +148,14 @@ open class SealDriveWidget : AppWidgetProvider() {
                         else -> Chip("Off", WARN)
                     }
                     val avg = s.avgKwhPerDay?.let { Chip("%.1f kWh".format(it), PLAIN) } ?: Chip("—", DIM)
-                    val cap = s.avgKwhPerDay?.let { "Avg ${money(it * Config.pence(ctx))}/day" } ?: "Avg / day"
-                    save(ctx, "Updated ${time()}", s.soc?.toInt() ?: -1,
-                        s.rangeKm?.let { "${Math.round(it * 0.621371)} mi range" } ?: "",
-                        s.locked == 2 && s.doorsOpen == 0, listOf(lock, win, sentry, avg), cap)
+                    val cost = s.avgKwhPerDay?.let { money(it * Config.pence(ctx)) }
+                    val cap = cost?.let { "Avg $it/day" } ?: "Avg / day"
+                    val capS = cost?.let { "$it/day" } ?: "per day"
+                    val miles = s.rangeKm?.let { "${Math.round(it * 0.621371)} mi" }
+                    val charge = if (s.charging) "⚡ " + (eta(s.chargeEtaMin) ?: "Charging") else null
+                    val rangeFull = if (charge != null) listOfNotNull(miles, charge).joinToString(" · ") else (miles?.let { "$it range" } ?: "")
+                    save(ctx, "Updated ${time()}", s.soc?.toInt() ?: -1, rangeFull,
+                        s.locked == 2 && s.doorsOpen == 0, listOf(lock, win, sentry, avg), cap, capS, charge ?: (miles ?: ""))
                 }
             }
         }
