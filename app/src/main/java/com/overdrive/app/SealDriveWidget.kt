@@ -123,6 +123,9 @@ open class SealDriveWidget : AppWidgetProvider() {
         /** Minutes -> "1h 20m" / "45m". */
         private fun eta(min: Int?): String? = min?.let { if (it >= 60) "${it / 60}h ${it % 60}m" else "${it}m" }
 
+        /** Minutes -> "1h20m" / "45m" (no space, for the narrow strip). */
+        private fun etaTight(min: Int?): String? = min?.let { if (it >= 60) "${it / 60}h${it % 60}m" else "${it}m" }
+
         private fun blank() = List(4) { Chip("—", DIM) }
 
         private fun store(ctx: Context, r: CarStatus.Result) {
@@ -154,8 +157,13 @@ open class SealDriveWidget : AppWidgetProvider() {
                     val miles = s.rangeKm?.let { "${Math.round(it * 0.621371)} mi" }
                     val charge = if (s.charging) "⚡ " + (eta(s.chargeEtaMin) ?: "Charging") else null
                     val rangeFull = if (charge != null) listOfNotNull(miles, charge).joinToString(" · ") else (miles?.let { "$it range" } ?: "")
-                    save(ctx, "Updated ${time()}", s.soc?.toInt() ?: -1, rangeFull,
-                        s.locked == 2 && s.doorsOpen == 0, listOf(lock, win, sentry, avg), cap, capS, charge ?: (miles ?: ""))
+                    // session cost = energy added so far x your price per kWh
+                    val sessCost = s.chargeSessionKwh?.let { money(it * Config.pence(ctx)) }
+                    val sub = if (s.charging && sessCost != null) "Session $sessCost · ${"%.1f".format(s.chargeSessionKwh)} kWh"
+                        else "Updated ${time()}"
+                    val stripCharge = if (s.charging) "⚡ " + (etaTight(s.chargeEtaMin) ?: "Charging") + (sessCost?.let { " · $it" } ?: "") else null
+                    save(ctx, sub, s.soc?.toInt() ?: -1, rangeFull,
+                        s.locked == 2 && s.doorsOpen == 0, listOf(lock, win, sentry, avg), cap, capS, stripCharge ?: (miles ?: ""))
                 }
             }
         }

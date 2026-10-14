@@ -24,6 +24,7 @@ object CarStatus {
         val avgKwhPerDay: Double?,
         val charging: Boolean = false,
         val chargeEtaMin: Int? = null,      // minutes to full while charging
+        val chargeSessionKwh: Double? = null, // energy added so far this charging session
     )
 
     sealed class Result {
@@ -183,8 +184,9 @@ object CarStatus {
         val ch = statusResp?.json?.optJSONObject("charging")
         val charging = ch?.optBoolean("charging", false) ?: false
         val eta = ch?.optInt("timeToFullMin", -1)?.takeIf { it > 0 }
+        val sess = ch?.optDouble("sessionKwh", Double.NaN)?.takeIf { !it.isNaN() && it > 0 }
 
         return Result.Ok(Snapshot(soc, range, locked, doorsOpen, if (winKnown) winOpen else null, sentryOn, sentryRec, avg,
-            charging, if (charging) eta else null))
+            charging, if (charging) eta else null, if (charging) sess else null))
     }
 }
