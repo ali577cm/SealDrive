@@ -18,7 +18,10 @@ import kotlin.concurrent.thread
  * 4x2 home-screen widget showing charge, lock, windows, sentry and average daily kWh.
  * Updates only when you tap the refresh icon - no background polling, no notifications, read-only requests.
  */
-class SealDriveWidget : AppWidgetProvider() {
+open class SealDriveWidget : AppWidgetProvider() {
+
+    /** True for the compact 4x1 strip. */
+    protected open val compact: Boolean = false
 
     companion object {
         private const val ACTION_REFRESH = "com.overdrive.app.WIDGET_REFRESH"
@@ -42,7 +45,7 @@ class SealDriveWidget : AppWidgetProvider() {
             e.apply()
         }
 
-        private fun render(ctx: Context, checking: Boolean): RemoteViews {
+        private fun render(ctx: Context, checking: Boolean, compact: Boolean): RemoteViews {
             val p = prefs(ctx)
             val open = PendingIntent.getActivity(ctx, 0, Intent(ctx, MainActivity::class.java),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -50,8 +53,8 @@ class SealDriveWidget : AppWidgetProvider() {
                 Intent(ctx, SealDriveWidget::class.java).setAction(ACTION_REFRESH),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             val soc = p.getInt("soc", -1)
-            return RemoteViews(ctx.packageName, R.layout.widget).apply {
-                setTextViewText(R.id.widget_sub, if (checking) "Checking…" else p.getString("sub", "Tap ⟳ to check"))
+            return RemoteViews(ctx.packageName, if (compact) R.layout.widget_small else R.layout.widget).apply {
+                if (!compact) setTextViewText(R.id.widget_sub, if (checking) "Checking…" else p.getString("sub", "Tap ⟳ to check"))
                 setTextViewText(R.id.widget_soc, if (soc >= 0) "$soc" else "--")
                 setTextColor(R.id.widget_soc, Color.parseColor(if (soc in 0..14) BAD else if (soc in 15..29) WARN else "#FFFFFF"))
                 setInt(R.id.widget_root, "setBackgroundResource", when (Config.bg(ctx)) {
@@ -60,8 +63,10 @@ class SealDriveWidget : AppWidgetProvider() {
                     else -> R.drawable.widget_bg
                 })
                 setTextViewText(R.id.widget_range, p.getString("range", ""))
-                setTextViewText(R.id.chip_avg_cap, p.getString("cap", "Avg / day"))
-                setProgressBar(R.id.widget_bar, 100, soc.coerceAtLeast(0), false)
+                if (!compact) {
+                    setTextViewText(R.id.chip_avg_cap, p.getString("cap", "Avg / day"))
+                    setProgressBar(R.id.widget_bar, 100, soc.coerceAtLeast(0), false)
+                }
                 setImageViewResource(R.id.chip_lock_icon, if (p.getBoolean("unlocked", false)) R.drawable.ic_lock_open else R.drawable.ic_lock)
                 for (i in VAL_IDS.indices) {
                     val color = Color.parseColor(p.getString("k$i", DIM))
@@ -76,14 +81,19 @@ class SealDriveWidget : AppWidgetProvider() {
 
         private fun push(ctx: Context, checking: Boolean) {
             val mgr = AppWidgetManager.getInstance(ctx)
-            val ids = mgr.getAppWidgetIds(ComponentName(ctx, SealDriveWidget::class.java))
-            if (ids.isNotEmpty()) mgr.updateAppWidget(ids, render(ctx, checking))
+            for ((cls, small) in listOf(SealDriveWidget::class.java to false, SealDriveWidgetSmall::class.java to true)) {
+                val ids = mgr.getAppWidgetIds(ComponentName(ctx, cls))
+                if (ids.isNotEmpty()) mgr.updateAppWidget(ids, render(ctx, checking, small))
+            }
         }
 
         private const val JOB_ID = 4201
 
-        fun hasWidgets(ctx: Context): Boolean =
-            AppWidgetManager.getInstance(ctx).getAppWidgetIds(ComponentName(ctx, SealDriveWidget::class.java)).isNotEmpty()
+        fun hasWidgets(ctx: Context): Boolean {
+            val mgr = AppWidgetManager.getInstance(ctx)
+            return mgr.getAppWidgetIds(ComponentName(ctx, SealDriveWidget::class.java)).isNotEmpty() ||
+                mgr.getAppWidgetIds(ComponentName(ctx, SealDriveWidgetSmall::class.java)).isNotEmpty()
+        }
 
         /** Fetches fresh data and redraws every widget. Blocking: call from a background thread. */
         fun refreshNow(ctx: Context) {
@@ -145,13 +155,15 @@ class SealDriveWidget : AppWidgetProvider() {
     }
 
     override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) {
-        mgr.updateAppWidget(ids, render(ctx, false))
+        mgr.updateAppWidget(ids, render(ctx, false, compact))
         scheduleJob(ctx)
     }
 
     override fun onEnabled(ctx: Context) = scheduleJob(ctx)
 
-    override fun onDisabled(ctx: Context) = cancelJob(ctx)
+    override fun onDisabled(ctx: Context) {
+        if (!hasWidgets(ctx)) cancelJob(ctx)   // keep refreshing while the other widget size is still on the home screen
+    }
 
     override fun onReceive(ctx: Context, intent: Intent) {
         super.onReceive(ctx, intent)

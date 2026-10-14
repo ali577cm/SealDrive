@@ -40,6 +40,7 @@
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <receiver
             android:name=".SealDriveWidget"
+            android:label="SealDrive"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -47,6 +48,17 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/sealdrive_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".SealDriveWidgetSmall"
+            android:label="SealDrive strip"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/sealdrive_widget_small_info" />
         </receiver>
     </application>
 </manifest>
