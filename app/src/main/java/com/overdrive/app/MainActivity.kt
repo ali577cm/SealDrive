@@ -172,7 +172,7 @@ class MainActivity : Activity() {
     override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); hideSystemUi() }
 
     override fun onResume() { super.onResume(); web.onResume(); if (failed) url?.let { web.loadUrl(it) } }
-    override fun onPause() { web.onPause(); super.onPause() }
+    override fun onPause() { web.onPause(); CookieManager.getInstance().flush(); super.onPause() }
     override fun onSaveInstanceState(out: Bundle) { super.onSaveInstanceState(out); web.saveState(out) }
 
     @Deprecated("Deprecated in Java")

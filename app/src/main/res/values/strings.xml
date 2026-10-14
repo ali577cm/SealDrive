@@ -1,4 +1,4 @@
 <resources>
-    <string name="widget_desc">SealDrive status and quick launch</string>
+    <string name="widget_desc">Charge, locks, windows, sentry and daily energy use</string>
     <string name="widget_refresh">Check connection</string>
 </resources>

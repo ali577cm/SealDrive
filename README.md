@@ -15,7 +15,10 @@ On first launch it asks for your Overdrive address (e.g. `http://100.x.x.x:8080`
 - **Your network.** The app only connects to the address you enter. Keep your Tailscale access controls tight.
 
 ## Widget
-A 4x2 home-screen widget shows the car's status (tap the refresh icon to check; no background polling) and opens the app when tapped.
+A 4x2 home-screen widget shows charge level, lock/door state, windows, sentry status and average daily kWh (last 7 days).
+Tap the refresh icon to update it; tap anywhere else to open the app. It only makes read-only requests, never stores a
+password or token (it reuses the login the app's browser view already holds), and does no background polling.
+Sign in once inside the app first; if the login expires the widget says "Open app to sign in".
 
 ## Updates
 Every push to `main` builds a signed APK and publishes it as a GitHub Release; the app offers it on launch.
