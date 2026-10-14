@@ -19,7 +19,6 @@ import android.view.View
 import android.view.WindowManager
 import android.content.res.Configuration
 import android.webkit.*
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 
 class MainActivity : Activity() {
 
@@ -28,7 +27,6 @@ class MainActivity : Activity() {
     private var lastCheck = 0L
     private var updateDialogShowing = false
     private lateinit var web: WebView
-    private lateinit var refresh: SwipeRefreshLayout
     private val handler = Handler(Looper.getMainLooper())
     private var failed = false
 
@@ -59,7 +57,6 @@ class MainActivity : Activity() {
                     if (u?.startsWith("data:") != true) failed = false
                 }
                 override fun onPageFinished(v: WebView, u: String?) {
-                    refresh.isRefreshing = false
                     if (u?.startsWith("data:") != true && !failed) failCount = 0
                 }
                 override fun onReceivedError(v: WebView, r: WebResourceRequest, e: WebResourceError) {
@@ -84,13 +81,7 @@ class MainActivity : Activity() {
             // long-press on the error screen to change the address
             setOnLongClickListener { if (failed) { askAddress(); true } else false }
         }
-        refresh = SwipeRefreshLayout(this).apply {
-            addView(web)
-            setOnRefreshListener { web.reload() }
-            // only allow pull-down when the page is scrolled to the top
-            setOnChildScrollUpCallback { _, _ -> web.scrollY > 0 }
-        }
-        setContentView(refresh)
+        setContentView(web)
         if (savedInstanceState != null) web.restoreState(savedInstanceState) else {
             val u = url
             if (u == null) askAddress() else web.loadUrl(u)
@@ -118,10 +109,21 @@ class MainActivity : Activity() {
             setText(url ?: "")
             setSingleLine()
         }
-        val priceInput = EditText(this).apply {
-            hint = "Electricity price (pence per kWh)"
+        val stdInput = EditText(this).apply {
+            hint = "Standard price (pence per kWh)"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText(Config.pence(this@MainActivity).toString().removeSuffix(".0"))
+            setText(Config.tariff(this@MainActivity).stdPence.toString().removeSuffix(".0"))
+            setSingleLine()
+        }
+        val cheapInput = EditText(this).apply {
+            hint = "Cheap-rate price (pence per kWh)"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(Config.tariff(this@MainActivity).cheapPence.toString().removeSuffix(".0"))
+            setSingleLine()
+        }
+        val windowInput = EditText(this).apply {
+            hint = "Cheap-rate window (HH:MM-HH:MM)"
+            setText(Config.windowText(this@MainActivity))
             setSingleLine()
         }
         val tempInput = EditText(this).apply {
@@ -146,15 +148,17 @@ class MainActivity : Activity() {
             val pad = (20 * resources.displayMetrics.density).toInt()
             setPadding(pad, 0, pad, 0)
             addView(input)
-            addView(priceInput)
+            addView(stdInput)
+            addView(cheapInput)
+            addView(windowInput)
             addView(tempInput)
             addView(minInput)
             addView(bgSpinner)
         }
         val d = AlertDialog.Builder(this)
             .setTitle("Overdrive address")
-            .setMessage("Enter the address of your Overdrive page, your electricity price and the climate button temperature and run time. All are stored only on this phone.")
-            .setView(box)
+            .setMessage("Your Overdrive address, electricity tariff (standard and cheap-rate prices and window) and climate button settings. All are stored only on this phone.")
+            .setView(android.widget.ScrollView(this).apply { addView(box) })
             .setCancelable(url != null)
             .setPositiveButton("Save") { _, _ ->
                 val saved = Config.setUrl(this, input.text.toString())
@@ -168,8 +172,8 @@ class MainActivity : Activity() {
                     if (!Config.setClimateMinutes(this, minInput.text.toString()))
                         Toast.makeText(this, "Run time not saved - use 10, 15, 20, 25 or 30", Toast.LENGTH_LONG).show()
                     SealDriveClimateWidget.redraw(this)
-                    if (!Config.setPence(this, priceInput.text.toString()))
-                        Toast.makeText(this, "Price not saved - enter pence per kWh, e.g. 9", Toast.LENGTH_LONG).show()
+                    Config.setTariff(this, stdInput.text.toString(), cheapInput.text.toString(), windowInput.text.toString())
+                        ?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
                     url = saved
                     failed = false
                     failCount = 0

@@ -151,14 +151,14 @@ open class SealDriveWidget : AppWidgetProvider() {
                         else -> Chip("Off", WARN)
                     }
                     val avg = s.avgKwhPerDay?.let { Chip("%.1f kWh".format(it), PLAIN) } ?: Chip("—", DIM)
-                    val cost = s.avgKwhPerDay?.let { money(it * Config.pence(ctx)) }
+                    val cost = s.avgCostPence?.let { money(it) }
                     val cap = cost?.let { "Avg $it/day" } ?: "Avg / day"
                     val capS = cost?.let { "$it/day" } ?: "per day"
                     val miles = s.rangeKm?.let { "${Math.round(it * 0.621371)} mi" }
                     val charge = if (s.charging) "⚡ " + (eta(s.chargeEtaMin) ?: "Charging") else null
                     val rangeFull = if (charge != null) listOfNotNull(miles, charge).joinToString(" · ") else (miles?.let { "$it range" } ?: "")
                     // session cost = energy added so far x your price per kWh
-                    val sessCost = s.chargeSessionKwh?.let { money(it * Config.pence(ctx)) }
+                    val sessCost = s.sessionCostPence?.let { money(it) }
                     val sub = if (s.charging && sessCost != null) "Session $sessCost · ${"%.1f".format(s.chargeSessionKwh)} kWh"
                         else "Updated ${time()}"
                     val stripCharge = if (s.charging) "⚡ " + (etaTight(s.chargeEtaMin) ?: "Charging") + (sessCost?.let { " · $it" } ?: "") else null

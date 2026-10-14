@@ -25,6 +25,8 @@ object CarStatus {
         val charging: Boolean = false,
         val chargeEtaMin: Int? = null,      // minutes to full while charging
         val chargeSessionKwh: Double? = null, // energy added so far this charging session
+        val avgCostPence: Double? = null,     // average charging cost per day (time-of-day tariff)
+        val sessionCostPence: Double? = null, // cost of the current charging session so far
     )
 
     sealed class Result {
@@ -128,6 +130,115 @@ object CarStatus {
         return (histSum + todaySum) / days
     }
 
+    // ---------------- time-of-day pricing of charging sessions ----------------
+
+    /** Milliseconds of [a, b) that fall inside the cheap window (local time). */
+    private fun cheapOverlapMs(a: Long, b: Long, t: Config.Tariff): Long {
+        val cal = java.util.Calendar.getInstance()
+        cal.timeInMillis = dayStart(a)
+        cal.add(java.util.Calendar.DAY_OF_MONTH, -1)          // a window that began the previous evening
+        var total = 0L
+        while (cal.timeInMillis < b) {
+            val d0 = cal.timeInMillis
+            val ws = d0 + t.startMin * 60_000L
+            val we = if (t.endMin > t.startMin) d0 + t.endMin * 60_000L else d0 + 86_400_000L + t.endMin * 60_000L
+            total += maxOf(0L, minOf(we, b) - maxOf(ws, a))
+            cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
+        }
+        return total
+    }
+
+    /** Cost in pence of [kwh] delivered evenly between [start] and [end], split by the cheap/standard windows. */
+    private fun priceSession(start: Long, end: Long, kwh: Double, t: Config.Tariff): Double {
+        if (kwh <= 0) return 0.0
+        if (end <= start) return kwh * (if (cheapOverlapMs(start, start + 1, t) > 0) t.cheapPence else t.stdPence)
+        val cheapFrac = cheapOverlapMs(start, end, t).toDouble() / (end - start)
+        return kwh * (cheapFrac * t.cheapPence + (1 - cheapFrac) * t.stdPence)
+    }
+
+    private fun fetchSessions(base: String, cookie: String, days: Int, limit: Int, offset: Int) =
+        get(base, "/api/charging?days=$days&limit=$limit&offset=$offset", cookie, 20000)?.json?.optJSONArray("sessions")
+
+    class ChargeCosts(val avgPencePerDay: Double?, val liveStart: Long?, val liveKwh: Double?)
+
+    private val rebuildingCost = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** Prices every finished session (all time, paged) once a day; results are cached on the phone. */
+    private fun rebuildCostHistory(ctx: Context, base: String, cookie: String, t: Config.Tariff) {
+        if (!rebuildingCost.compareAndSet(false, true)) return
+        thread {
+            try {
+                val today = dayStart(System.currentTimeMillis())
+                var sum = 0.0
+                var first = Long.MAX_VALUE
+                var offset = 0
+                var pages = 0
+                while (pages < 100) {                      // up to 20,000 sessions
+                    val page = fetchSessions(base, cookie, 0, 200, offset) ?: return@thread
+                    for (i in 0 until page.length()) {
+                        val o = page.optJSONObject(i) ?: continue
+                        val start = o.optLong("startTime", 0L)
+                        if (start > 0 && start < first) first = start
+                        if (o.optBoolean("inProgress", false)) continue
+                        val end = o.optLong("endTime", 0L)
+                        val kwh = o.optDouble("energyAdded", Double.NaN)
+                        if (start > 0 && end > 0 && end < today && !kwh.isNaN() && kwh > 0) sum += priceSession(start, end, kwh, t)
+                    }
+                    if (page.length() < 200) break
+                    offset += 200
+                    pages++
+                }
+                ctx.getSharedPreferences("charge_cache", Context.MODE_PRIVATE).edit()
+                    .putLong("day", today)
+                    .putString("sig", t.signature())
+                    .putLong("sum", java.lang.Double.doubleToRawLongBits(sum))
+                    .putLong("first", if (first == Long.MAX_VALUE) 0L else first)
+                    .apply()
+                SealDriveWidget.refreshNow(ctx)
+            } catch (_: Exception) {
+            } finally {
+                rebuildingCost.set(false)
+            }
+        }
+    }
+
+    /**
+     * Average charging cost per day over the whole history, plus the open session's start/energy.
+     * Sessions that finished before today come from the daily cache; everything newer is priced fresh.
+     */
+    private fun chargeCosts(ctx: Context, base: String, cookie: String): ChargeCosts? {
+        val t = Config.tariff(ctx)
+        val now = System.currentTimeMillis()
+        val today = dayStart(now)
+        val p = ctx.getSharedPreferences("charge_cache", Context.MODE_PRIVATE)
+        val cacheOk = p.getLong("day", 0L) != 0L && p.getString("sig", "") == t.signature()
+        if (p.getLong("day", 0L) != today || !cacheOk) rebuildCostHistory(ctx, base, cookie, t)
+
+        val recent = fetchSessions(base, cookie, 3, 200, 0) ?: return null
+        var recentSum = 0.0
+        var first = if (cacheOk) p.getLong("first", 0L) else 0L
+        var liveStart: Long? = null
+        var liveKwh: Double? = null
+        for (i in 0 until recent.length()) {
+            val o = recent.optJSONObject(i) ?: continue
+            val start = o.optLong("startTime", 0L)
+            if (start > 0 && (first == 0L || start < first)) first = start
+            val inProgress = o.optBoolean("inProgress", false)
+            val end = o.optLong("endTime", 0L)
+            val kwh = o.optDouble("energyAdded", Double.NaN).takeIf { !it.isNaN() && it > 0 } ?: 0.0
+            if (inProgress) {
+                if (liveStart == null || start > liveStart) { liveStart = start; liveKwh = kwh.takeIf { it > 0 } }
+                recentSum += priceSession(start, now, kwh, t)
+            } else if (end >= today) {
+                recentSum += priceSession(start, end, kwh, t)
+            }
+        }
+        if (!cacheOk || first == 0L) return ChargeCosts(null, liveStart, liveKwh)
+        val histSum = java.lang.Double.longBitsToDouble(p.getLong("sum", 0L))
+        val days = (Math.round((today - dayStart(first)) / 86_400_000.0).toInt() + 1).coerceAtLeast(1)
+        return ChargeCosts((histSum + recentSum) / days, liveStart, liveKwh)
+    }
+
     private fun dayStart(t: Long): Long {
         val c = java.util.Calendar.getInstance()
         c.timeInMillis = t
@@ -147,11 +258,13 @@ object CarStatus {
         var sentryResp: Resp? = null
         var avg: Double? = null
         var statusResp: Resp? = null
+        var costs: ChargeCosts? = null
         val t1 = thread { sentryResp = get(base, "/api/surveillance/status", cookie) }
         val t3 = thread { statusResp = get(base, "/status", cookie, 8000) }
+        val t4 = thread { costs = try { chargeCosts(ctx, base, cookie) } catch (_: Exception) { null } }
         val t2 = thread { avg = try { averageKwhPerDay(ctx, base, cookie) } catch (_: Exception) { null } }
         val state = get(base, "/api/vehicle/state", cookie)
-        t1.join(); t2.join(); t3.join()
+        t1.join(); t2.join(); t3.join(); t4.join()
 
         if (state == null || state.code == -1) return Result.Offline(state?.err ?: "no response")
         val j = state.json ?: return Result.SignIn(if (state.code == 200) "got a web page" else "HTTP ${state.code}")
@@ -186,7 +299,13 @@ object CarStatus {
         val eta = ch?.optInt("timeToFullMin", -1)?.takeIf { it > 0 }
         val sess = ch?.optDouble("sessionKwh", Double.NaN)?.takeIf { !it.isNaN() && it > 0 }
 
+        val tariff = Config.tariff(ctx)
+        val now = System.currentTimeMillis()
+        val liveKwh = if (charging) (sess ?: costs?.liveKwh) else null
+        val sessionCost = if (charging && liveKwh != null)
+            priceSession(costs?.liveStart ?: now, now, liveKwh, tariff) else null
+
         return Result.Ok(Snapshot(soc, range, locked, doorsOpen, if (winKnown) winOpen else null, sentryOn, sentryRec, avg,
-            charging, if (charging) eta else null, if (charging) sess else null))
+            charging, if (charging) eta else null, liveKwh, costs?.avgPencePerDay, sessionCost))
     }
 }
