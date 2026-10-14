@@ -27,12 +27,12 @@ object CarStatus {
     sealed class Result {
         class Ok(val s: Snapshot) : Result()
         object NoAddress : Result()
-        object SignIn : Result()
-        object Offline : Result()
-        object NoData : Result()
+        class SignIn(val why: String) : Result()
+        class Offline(val why: String) : Result()
+        class NoData(val why: String) : Result()
     }
 
-    private class Resp(val code: Int, val json: JSONObject?)
+    private class Resp(val code: Int, val json: JSONObject?, val err: String? = null)
 
     private fun get(base: String, path: String, cookie: String): Resp? = try {
         val c = URL(base.trimEnd('/') + path).openConnection() as HttpURLConnection
@@ -46,12 +46,12 @@ object CarStatus {
         val body = if (code == 200) c.inputStream.bufferedReader().use { it.readText() } else ""
         c.disconnect()
         Resp(code, if (body.trimStart().startsWith("{")) try { JSONObject(body) } catch (_: Exception) { null } else null)
-    } catch (_: IOException) { null }
+    } catch (e: IOException) { Resp(-1, null, e.javaClass.simpleName) }
 
     fun fetch(ctx: Context): Result {
         val base = Config.url(ctx) ?: return Result.NoAddress
         val cookie = CookieManager.getInstance().getCookie(base)
-        if (cookie.isNullOrEmpty()) return Result.SignIn
+        if (cookie.isNullOrEmpty()) return Result.SignIn("no login in app")
 
         // sentry + trips in parallel with the main state call
         var sentryResp: Resp? = null
@@ -61,9 +61,9 @@ object CarStatus {
         val state = get(base, "/api/vehicle/state", cookie)
         t1.join(); t2.join()
 
-        if (state == null) return Result.Offline
-        val j = state.json ?: return Result.SignIn          // 401/403/redirect/HTML login page
-        if (!j.optBoolean("success", false)) return Result.NoData
+        if (state == null || state.code == -1) return Result.Offline(state?.err ?: "no response")
+        val j = state.json ?: return Result.SignIn(if (state.code == 200) "got a web page" else "HTTP ${state.code}")
+        if (!j.optBoolean("success", false)) return Result.NoData(j.optString("error", "car data unavailable").take(40))
 
         val battery = j.optJSONObject("battery")
         val soc = battery?.optDouble("soc", Double.NaN)?.takeIf { !it.isNaN() }

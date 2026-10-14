@@ -79,9 +79,9 @@ class SealDriveWidget : AppWidgetProvider() {
         private fun store(ctx: Context, r: CarStatus.Result) {
             when (r) {
                 is CarStatus.Result.NoAddress -> save(ctx, "Set address in app", -1, "", false, blank())
-                is CarStatus.Result.SignIn -> save(ctx, "Open app to sign in", -1, "", false, blank())
-                is CarStatus.Result.Offline -> save(ctx, "Car offline · ${time()}", -1, "", false, blank())
-                is CarStatus.Result.NoData -> save(ctx, "No car data · ${time()}", -1, "", false, blank())
+                is CarStatus.Result.SignIn -> save(ctx, "Sign in via app (${r.why})", -1, "", false, blank())
+                is CarStatus.Result.Offline -> save(ctx, "Offline: ${r.why}", -1, "", false, blank())
+                is CarStatus.Result.NoData -> save(ctx, "No data: ${r.why}", -1, "", false, blank())
                 is CarStatus.Result.Ok -> {
                     val s = r.s
                     val lock = when {
