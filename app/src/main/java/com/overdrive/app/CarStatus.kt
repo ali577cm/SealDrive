@@ -48,6 +48,16 @@ object CarStatus {
         Resp(code, if (body.trimStart().startsWith("{")) try { JSONObject(body) } catch (_: Exception) { null } else null)
     } catch (e: IOException) { Resp(-1, null, e.javaClass.simpleName) }
 
+    private fun dayStart(t: Long): Long {
+        val c = java.util.Calendar.getInstance()
+        c.timeInMillis = t
+        c.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        c.set(java.util.Calendar.MINUTE, 0)
+        c.set(java.util.Calendar.SECOND, 0)
+        c.set(java.util.Calendar.MILLISECOND, 0)
+        return c.timeInMillis
+    }
+
     fun fetch(ctx: Context): Result {
         val base = Config.url(ctx) ?: return Result.NoAddress
         val cookie = CookieManager.getInstance().getCookie(base)
@@ -91,12 +101,25 @@ object CarStatus {
 
         val trips = tripsResp?.json?.optJSONArray("trips")
         val avg = trips?.let { arr ->
+            val now = System.currentTimeMillis()
             var sum = 0.0
+            var earliest = now
             for (i in 0 until arr.length()) {
-                val kwh = arr.optJSONObject(i)?.optDouble("energyUsedKwh", 0.0) ?: 0.0
-                if (!kwh.isNaN() && kwh > 0) sum += kwh
+                val o = arr.optJSONObject(i) ?: continue
+                // measured energy; when the car can't measure it Overdrive reports 0 and keeps energyPerKm (kWh/km) instead
+                var e = o.optDouble("energyUsedKwh", 0.0)
+                if (e.isNaN() || e <= 0) {
+                    val perKm = o.optDouble("energyPerKm", 0.0)
+                    val km = o.optDouble("distanceKm", 0.0)
+                    e = if (!perKm.isNaN() && !km.isNaN() && perKm > 0 && km > 0) perKm * km else 0.0
+                }
+                sum += e
+                val start = o.optLong("startTime", 0L)
+                if (start > 0 && start < earliest) earliest = start
             }
-            sum / 7.0
+            // average over the days since the first recorded trip (today counts as a day), at most 7
+            val days = Math.round((dayStart(now) - dayStart(earliest)) / 86_400_000.0).toInt().plus(1).coerceIn(1, 7)
+            sum / days
         }
 
         return Result.Ok(Snapshot(soc, range, locked, doorsOpen, if (winKnown) winOpen else null, sentryOn, sentryRec, avg))
