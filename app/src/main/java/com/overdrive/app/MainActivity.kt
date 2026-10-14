@@ -214,6 +214,11 @@ class MainActivity : Activity() {
         web.onResume()
         if (failed) url?.let { web.loadUrl(it) }
         if (System.currentTimeMillis() - lastCheck > 6 * 3600_000L) checkForUpdate()
+        // keep the widget fresh whenever the app is opened, and make sure its background refresh is scheduled
+        if (SealDriveWidget.hasWidgets(this)) {
+            SealDriveWidget.scheduleJob(this)
+            thread { SealDriveWidget.refreshNow(this) }
+        }
     }
     override fun onPause() { web.onPause(); CookieManager.getInstance().flush(); super.onPause() }
     override fun onSaveInstanceState(out: Bundle) { super.onSaveInstanceState(out); web.saveState(out) }

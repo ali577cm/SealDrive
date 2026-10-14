@@ -1,6 +1,8 @@
 package com.overdrive.app
 
 import android.app.PendingIntent
+import android.app.job.JobInfo
+import android.app.job.JobScheduler
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
@@ -72,6 +74,31 @@ class SealDriveWidget : AppWidgetProvider() {
             if (ids.isNotEmpty()) mgr.updateAppWidget(ids, render(ctx, checking))
         }
 
+        private const val JOB_ID = 4201
+
+        fun hasWidgets(ctx: Context): Boolean =
+            AppWidgetManager.getInstance(ctx).getAppWidgetIds(ComponentName(ctx, SealDriveWidget::class.java)).isNotEmpty()
+
+        /** Fetches fresh data and redraws every widget. Blocking: call from a background thread. */
+        fun refreshNow(ctx: Context) {
+            store(ctx, CarStatus.fetch(ctx))
+            prefs(ctx).edit().putLong("fetched", System.currentTimeMillis()).apply()
+            push(ctx, false)
+        }
+
+        /** Schedules the ~15 minute background refresh (idempotent). */
+        fun scheduleJob(ctx: Context) {
+            val js = ctx.getSystemService(JobScheduler::class.java)
+            if (js.getPendingJob(JOB_ID) != null) return
+            js.schedule(JobInfo.Builder(JOB_ID, ComponentName(ctx, RefreshJobService::class.java))
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .setPeriodic(15 * 60 * 1000L)
+                .setPersisted(true)
+                .build())
+        }
+
+        fun cancelJob(ctx: Context) = ctx.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
+
         private fun time() = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())
 
         private fun blank() = List(4) { Chip("—", DIM) }
@@ -109,19 +136,31 @@ class SealDriveWidget : AppWidgetProvider() {
 
     override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) {
         mgr.updateAppWidget(ids, render(ctx, false))
+        scheduleJob(ctx)
     }
+
+    override fun onEnabled(ctx: Context) = scheduleJob(ctx)
+
+    override fun onDisabled(ctx: Context) = cancelJob(ctx)
 
     override fun onReceive(ctx: Context, intent: Intent) {
         super.onReceive(ctx, intent)
-        if (intent.action != ACTION_REFRESH) return
-        val pending = goAsync()
-        push(ctx, true)
-        thread {
-            try {
-                store(ctx, CarStatus.fetch(ctx))
-                push(ctx, false)
-            } finally {
-                pending.finish()
+        when (intent.action) {
+            ACTION_REFRESH -> {
+                val pending = goAsync()
+                push(ctx, true)
+                thread {
+                    try { refreshNow(ctx) } finally { pending.finish() }
+                }
+            }
+            AppWidgetManager.ACTION_APPWIDGET_UPDATE, AppWidgetManager.ACTION_APPWIDGET_ENABLED -> {
+                // widget just added / redrawn: fetch if the data is more than 2 minutes old
+                if (System.currentTimeMillis() - prefs(ctx).getLong("fetched", 0L) > 2 * 60_000L) {
+                    val pending = goAsync()
+                    thread {
+                        try { refreshNow(ctx) } finally { pending.finish() }
+                    }
+                }
             }
         }
     }
