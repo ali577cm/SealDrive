@@ -14,6 +14,9 @@ On first launch it asks for your Overdrive address (e.g. `http://100.x.x.x:8080`
   Only install updates if you trust this repository. Review the source before installing.
 - **Your network.** The app only connects to the address you enter. Keep your Tailscale access controls tight.
 
+## Widget
+A 4x2 home-screen widget shows the car's status (tap the refresh icon to check; no background polling) and opens the app when tapped.
+
 ## Updates
 Every push to `main` builds a signed APK and publishes it as a GitHub Release; the app offers it on launch.
 The workflow needs repo secrets `KEYSTORE_B64` and `KEYSTORE_PASSWORD`.
