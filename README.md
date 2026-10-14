@@ -26,3 +26,6 @@ The workflow needs repo secrets `KEYSTORE_B64` and `KEYSTORE_PASSWORD`.
 
 ## License
 MIT, see [LICENSE](LICENSE). The app icon is an original illustration and is not an official logo of any brand. Widget icon credits: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Updating
+The app checks for new releases when it opens. To check manually, long-press the app icon and choose "Settings & updates", then "Check for updates".
