@@ -35,9 +35,9 @@ class SealDriveWidget : AppWidgetProvider() {
 
         private class Chip(val text: String, val color: String)
 
-        private fun save(c: Context, sub: String, soc: Int, range: String, unlocked: Boolean, chips: List<Chip>) {
+        private fun save(c: Context, sub: String, soc: Int, range: String, unlocked: Boolean, chips: List<Chip>, cap: String = "Avg / day") {
             val e = prefs(c).edit().putString("sub", sub).putInt("soc", soc).putString("range", range)
-                .putBoolean("unlocked", unlocked)
+                .putBoolean("unlocked", unlocked).putString("cap", cap)
             chips.forEachIndexed { i, ch -> e.putString("v$i", ch.text).putString("k$i", ch.color) }
             e.apply()
         }
@@ -55,6 +55,7 @@ class SealDriveWidget : AppWidgetProvider() {
                 setTextViewText(R.id.widget_soc, if (soc >= 0) "$soc" else "--")
                 setTextColor(R.id.widget_soc, Color.parseColor(if (soc in 0..14) BAD else if (soc in 15..29) WARN else "#FFFFFF"))
                 setTextViewText(R.id.widget_range, p.getString("range", ""))
+                setTextViewText(R.id.chip_avg_cap, p.getString("cap", "Avg / day"))
                 setProgressBar(R.id.widget_bar, 100, soc.coerceAtLeast(0), false)
                 setImageViewResource(R.id.chip_lock_icon, if (p.getBoolean("unlocked", false)) R.drawable.ic_lock_open else R.drawable.ic_lock)
                 for (i in VAL_IDS.indices) {
@@ -101,6 +102,9 @@ class SealDriveWidget : AppWidgetProvider() {
 
         private fun time() = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())
 
+        /** Pence -> "88p" or "£1.05". */
+        private fun money(pence: Double) = if (pence >= 100) "£%.2f".format(pence / 100) else "${Math.round(pence)}p"
+
         private fun blank() = List(4) { Chip("—", DIM) }
 
         private fun store(ctx: Context, r: CarStatus.Result) {
@@ -126,9 +130,10 @@ class SealDriveWidget : AppWidgetProvider() {
                         else -> Chip("Off", WARN)
                     }
                     val avg = s.avgKwhPerDay?.let { Chip("%.1f kWh".format(it), PLAIN) } ?: Chip("—", DIM)
+                    val cap = s.avgKwhPerDay?.let { "Avg ${money(it * Config.pence(ctx))}/day" } ?: "Avg / day"
                     save(ctx, "Updated ${time()}", s.soc?.toInt() ?: -1,
                         s.rangeKm?.let { "${it.toInt()} km range" } ?: "",
-                        s.locked == 2 && s.doorsOpen == 0, listOf(lock, win, sentry, avg))
+                        s.locked == 2 && s.doorsOpen == 0, listOf(lock, win, sentry, avg), cap)
                 }
             }
         }

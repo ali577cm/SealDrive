@@ -6,6 +6,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.text.InputType
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.Toast
 import kotlin.concurrent.thread
 import android.graphics.Bitmap
@@ -115,10 +116,23 @@ class MainActivity : Activity() {
             setText(url ?: "")
             setSingleLine()
         }
+        val priceInput = EditText(this).apply {
+            hint = "Electricity price (pence per kWh)"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(Config.pence(this@MainActivity).toString().removeSuffix(".0"))
+            setSingleLine()
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, 0, pad, 0)
+            addView(input)
+            addView(priceInput)
+        }
         val d = AlertDialog.Builder(this)
             .setTitle("Overdrive address")
-            .setMessage("Enter the address of your Overdrive page. It is stored only on this phone.")
-            .setView(input)
+            .setMessage("Enter the address of your Overdrive page and your electricity price. Both are stored only on this phone.")
+            .setView(box)
             .setCancelable(url != null)
             .setPositiveButton("Save") { _, _ ->
                 val saved = Config.setUrl(this, input.text.toString())
@@ -126,10 +140,13 @@ class MainActivity : Activity() {
                     Toast.makeText(this, "That doesn't look like a valid address", Toast.LENGTH_LONG).show()
                     askAddress()
                 } else {
+                    if (!Config.setPence(this, priceInput.text.toString()))
+                        Toast.makeText(this, "Price not saved - enter pence per kWh, e.g. 9", Toast.LENGTH_LONG).show()
                     url = saved
                     failed = false
                     failCount = 0
                     web.loadUrl(saved)
+                    if (SealDriveWidget.hasWidgets(this)) thread { SealDriveWidget.refreshNow(this) }
                 }
             }
         if (url != null) d.setNegativeButton("Cancel", null)
