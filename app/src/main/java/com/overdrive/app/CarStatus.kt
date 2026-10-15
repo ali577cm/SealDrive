@@ -149,8 +149,9 @@ object CarStatus {
     }
 
     /** Cost in pence of [kwh] delivered evenly between [start] and [end], split by the cheap/standard windows. */
-    internal fun priceSession(start: Long, end: Long, kwh: Double, t: Config.Tariff): Double {
-        if (kwh <= 0) return 0.0
+    internal fun priceSession(start: Long, end: Long, batteryKwh: Double, t: Config.Tariff): Double {
+        if (batteryKwh <= 0) return 0.0
+        val kwh = batteryKwh * 100.0 / t.effPercent      // energy drawn from the meter, incl. charger losses
         if (end <= start) return kwh * (if (cheapOverlapMs(start, start + 1, t) > 0) t.cheapPence else t.stdPence)
         val cheapFrac = cheapOverlapMs(start, end, t).toDouble() / (end - start)
         return kwh * (cheapFrac * t.cheapPence + (1 - cheapFrac) * t.stdPence)

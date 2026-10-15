@@ -45,7 +45,12 @@ object MonthlyReport {
 
     private fun monthKey(t: Long) = SimpleDateFormat("yyyy-MM", Locale.US).format(Date(t))
 
-    /** Totals for [from, to) or null if the car could not be reached. */
+    /**
+     * Totals for the half-open period [from, to) in local time, or null if the car could not be reached
+     * (or a charge that began in the period is still running - try again later).
+     * Trips count in the month they START. Charging sessions are split at the month boundaries: each month gets
+     * only its share of the energy (spread evenly over the session), priced at the rates that applied then.
+     */
     fun compute(ctx: Context, from: Long, to: Long): Summary? {
         val (base, cookie) = CarStatus.auth(ctx) ?: return null
         var km = 0.0
@@ -53,7 +58,8 @@ object MonthlyReport {
         var trips = 0
         var off = 0
         while (off < 50_000) {
-            val arr = CarStatus.getJson(base, "/api/trips?from=$from&to=$to&limit=500&offset=$off", cookie)
+            // Overdrive's range is inclusive at both ends, so stop 1 ms before the next month starts
+            val arr = CarStatus.getJson(base, "/api/trips?from=$from&to=${to - 1}&limit=500&offset=$off", cookie)
                 ?.optJSONArray("trips") ?: return null
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
@@ -70,18 +76,32 @@ object MonthlyReport {
         var cost = 0.0
         var sessions = 0
         off = 0
+        // also fetch sessions that began up to 3 days earlier, so one that crossed into this period is included
+        val sessFrom = from - 3 * 86_400_000L
         while (off < 20_000) {
-            val arr = CarStatus.getJson(base, "/api/charging?from=$from&to=$to&limit=200&offset=$off", cookie)
+            val arr = CarStatus.getJson(base, "/api/charging?from=$sessFrom&to=${to - 1}&limit=200&offset=$off", cookie)
                 ?.optJSONArray("sessions") ?: return null
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
-                if (o.optBoolean("inProgress", false)) continue
-                val e = o.optDouble("energyAdded", Double.NaN)
                 val start = o.optLong("startTime", 0L)
+                if (o.optBoolean("inProgress", false)) {
+                    if (start in 1 until to) return null            // still charging from last month: wait and retry
+                    continue
+                }
                 val end = o.optLong("endTime", 0L)
-                if (start > 0 && end > 0 && !e.isNaN() && e > 0) {
+                val e = o.optDouble("energyAdded", Double.NaN)
+                if (start <= 0 || end <= 0 || e.isNaN() || e <= 0) continue
+                if (end > start) {
+                    val os = maxOf(start, from)
+                    val oe = minOf(end, to)
+                    if (oe <= os) continue                            // no overlap with this month
+                    val part = e * (oe - os).toDouble() / (end - start)
+                    charged += part
+                    cost += CarStatus.priceSession(os, oe, part, t)
+                    sessions++
+                } else if (start in from until to) {                  // zero-length session: count it where it began
                     charged += e
-                    cost += CarStatus.priceSession(start, end, e, t)
+                    cost += CarStatus.priceSession(start, start, e, t)
                     sessions++
                 }
             }
@@ -91,12 +111,13 @@ object MonthlyReport {
         return Summary(km * 0.621371, kwh, charged, cost, trips, sessions)
     }
 
-    private fun notify(ctx: Context, monthLabel: String, s: Summary) {
+    private fun notify(ctx: Context, monthLabel: String, period: String, s: Summary) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Monthly summary", NotificationManager.IMPORTANCE_DEFAULT))
         val cost = "£%.2f".format(s.costPence / 100)
         val eff = if (s.kwhUsed > 0 && s.miles > 0) " (%.1f mi/kWh)".format(s.miles / s.kwhUsed) else ""
-        val big = "Charging cost: $cost (${"%.1f".format(s.kwhCharged)} kWh in ${s.sessions} sessions)\n" +
+        val big = "$period\n" +
+            "Charging cost: $cost (${"%.1f".format(s.kwhCharged)} kWh in ${s.sessions} sessions)\n" +
             "Driven: ${Math.round(s.miles)} mi in ${s.trips} trips\n" +
             "Energy used: ${"%.1f".format(s.kwhUsed)} kWh$eff"
         val open = PendingIntent.getActivity(ctx, 3, Intent(ctx, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
@@ -117,13 +138,19 @@ object MonthlyReport {
      */
     fun checkAndSend(ctx: Context, test: Boolean = false): Boolean {
         if (!test && !Config.monthlyEnabled(ctx)) return true
-        if (!test && Calendar.getInstance().get(Calendar.DAY_OF_MONTH) != 1) return true   // 1st of the month only
+        if (!test) {
+            val now = Calendar.getInstance()
+            if (now.get(Calendar.DAY_OF_MONTH) != 1) return true     // 1st of the month only
+            if (now.get(Calendar.HOUR_OF_DAY) < 8) return true       // let overnight charging finish first
+        }
         val prev = monthStart(-1)
         val key = monthKey(prev)
         if (!test && prefs(ctx).getString("sent", "") == key) return true      // already sent for that month
         if (Tailscale.isTailscaleAddress(Config.url(ctx)) && !Tailscale.isConnected() && !test) return false
         val summary = compute(ctx, prev, monthStart(0)) ?: return false
-        notify(ctx, SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(Date(prev)) + " summary", summary)
+        val period = SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(prev)) + " - " +
+            SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(monthStart(0) - 1))
+        notify(ctx, SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(Date(prev)) + " summary", period, summary)
         if (!test) prefs(ctx).edit().putString("sent", key).apply()
         return true
     }

@@ -154,6 +154,12 @@ class MainActivity : Activity() {
             setText(Config.windowText(this@MainActivity))
             setSingleLine()
         }
+        val effInput = EditText(this).apply {
+            hint = "Charger efficiency % (100 = ignore losses, ~90 typical)"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(Config.tariff(this@MainActivity).effPercent.toString().removeSuffix(".0"))
+            setSingleLine()
+        }
         val tempInput = EditText(this).apply {
             hint = "Climate button temperature (°C)"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
@@ -183,6 +189,7 @@ class MainActivity : Activity() {
             addView(stdInput)
             addView(cheapInput)
             addView(windowInput)
+            addView(effInput)
             addView(tempInput)
             addView(minInput)
             addView(monthlyBox)
@@ -208,7 +215,7 @@ class MainActivity : Activity() {
                     if (!Config.setClimateMinutes(this, minInput.text.toString()))
                         Toast.makeText(this, "Run time not saved - use 10, 15, 20, 25 or 30", Toast.LENGTH_LONG).show()
                     SealDriveClimateWidget.redraw(this)
-                    Config.setTariff(this, stdInput.text.toString(), cheapInput.text.toString(), windowInput.text.toString())
+                    Config.setTariff(this, stdInput.text.toString(), cheapInput.text.toString(), windowInput.text.toString(), effInput.text.toString())
                         ?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
                     url = saved
                     failed = false

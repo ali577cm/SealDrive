@@ -37,15 +37,15 @@ object Config {
     fun setMonthlyEnabled(c: Context, on: Boolean) { prefs(c).edit().putBoolean("monthly", on).apply() }
 
     /** Time-of-day electricity tariff (pence per kWh): a cheap window and a standard rate the rest of the day. */
-    class Tariff(val stdPence: Double, val cheapPence: Double, val startMin: Int, val endMin: Int) {
-        fun signature() = "$stdPence|$cheapPence|$startMin|$endMin"
+    class Tariff(val stdPence: Double, val cheapPence: Double, val startMin: Int, val endMin: Int, val effPercent: Double = 100.0) {
+        fun signature() = "$stdPence|$cheapPence|$startMin|$endMin|$effPercent"
     }
 
     /** Defaults match Octopus Go: 9.5p 00:30-05:30, 36.67p otherwise. */
     fun tariff(c: Context): Tariff {
         val p = prefs(c)
         return Tariff(p.getFloat("tStd", 36.67f).toDouble(), p.getFloat("tCheap", 9.5f).toDouble(),
-            p.getInt("tStart", 30), p.getInt("tEnd", 330))
+            p.getInt("tStart", 30), p.getInt("tEnd", 330), p.getFloat("tEff", 100f).toDouble())
     }
 
     fun windowText(c: Context): String {
@@ -54,17 +54,19 @@ object Config {
     }
 
     /** Saves the tariff; returns null when OK, otherwise a message saying what was wrong. */
-    fun setTariff(c: Context, std: String, cheap: String, window: String): String? {
+    fun setTariff(c: Context, std: String, cheap: String, window: String, eff: String): String? {
         val s = std.trim().replace(',', '.').toFloatOrNull()
         val ch = cheap.trim().replace(',', '.').toFloatOrNull()
         if (s == null || s < 0f || s > 1000f) return "Standard price not saved (use pence per kWh, e.g. 36.67)"
         if (ch == null || ch < 0f || ch > 1000f) return "Cheap price not saved (use pence per kWh, e.g. 9.5)"
+        val e = eff.trim().replace(',', '.').toFloatOrNull()
+        if (e == null || e < 50f || e > 100f) return "Charger efficiency not saved (use 50 to 100; 100 = ignore losses)"
         val m = Regex("^(\\d{1,2}):(\\d{2})\\s*-\\s*(\\d{1,2}):(\\d{2})$").matchEntire(window.trim())
             ?: return "Cheap window not saved (use HH:MM-HH:MM, e.g. 00:30-05:30)"
         val (h1, m1, h2, m2) = m.destructured
         if (h1.toInt() > 23 || h2.toInt() > 23 || m1.toInt() > 59 || m2.toInt() > 59)
             return "Cheap window not saved (invalid time)"
-        prefs(c).edit().putFloat("tStd", s).putFloat("tCheap", ch)
+        prefs(c).edit().putFloat("tStd", s).putFloat("tCheap", ch).putFloat("tEff", e)
             .putInt("tStart", h1.toInt() * 60 + m1.toInt()).putInt("tEnd", h2.toInt() * 60 + m2.toInt()).apply()
         return null
     }
