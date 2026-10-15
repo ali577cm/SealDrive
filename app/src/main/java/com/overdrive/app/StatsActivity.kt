@@ -7,7 +7,11 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.app.AlertDialog
+import android.text.InputType
+import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.Toast
 import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
@@ -29,6 +33,8 @@ class StatsActivity : Activity() {
     private val results = LinkedHashMap<String, MonthlyReport.Summary>()
     private var tab = 0
     private var status = ""
+    private var rows: List<MonthlyReport.ChargeRow>? = null
+    private var rowsFailed = false
     @Volatile private var loading = false
     private lateinit var content: LinearLayout
     private lateinit var tabViews: List<TextView>
@@ -60,18 +66,18 @@ class StatsActivity : Activity() {
         bar.addView(text("Usage & costs", 20f, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
         bar.addView(text("⟳", 24f, accent, true).apply {
             setPadding(dp(12), dp(4), dp(12), dp(4))
-            setOnClickListener { load(force = true) }
+            setOnClickListener { load(force = true); loadCharges() }
             contentDescription = "Refresh"
         })
         root.addView(bar)
 
         // tabs
         val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(12), dp(4), dp(12), dp(8)) }
-        tabViews = listOf("This month", "Months", "Year").mapIndexed { i, label ->
-            text(label, 14f, dim, true).apply {
+        tabViews = listOf("This month", "Months", "Year", "Charges").mapIndexed { i, label ->
+            text(label, 13f, dim, true).apply {
                 gravity = Gravity.CENTER
-                setPadding(dp(8), dp(10), dp(8), dp(10))
-                setOnClickListener { tab = i; render() }
+                setPadding(dp(4), dp(10), dp(4), dp(10))
+                setOnClickListener { tab = i; if (i == 3 && rows == null) loadCharges(); render() }
             }.also { tabs.addView(it, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(3); marginEnd = dp(3) }) }
         }
         root.addView(tabs)
@@ -142,6 +148,23 @@ class StatsActivity : Activity() {
         }
     }
 
+    private fun loadCharges() {
+        thread {
+            val r = MonthlyReport.chargeRows(this, 45)
+            rows = r
+            rowsFailed = r == null
+            runOnUiThread { render() }
+        }
+    }
+
+    /** Charges you add by hand change the totals, so forget the saved month results and recalculate. */
+    private fun manualChanged() {
+        cache().edit().clear().apply()
+        results.clear()
+        loadCharges()
+        load(force = true)
+    }
+
     // ---------------- drawing ----------------
 
     private fun text(t: String, sp: Float, color: Int, bold: Boolean = false) = TextView(this).apply {
@@ -192,9 +215,88 @@ class StatsActivity : Activity() {
         when (tab) {
             0 -> renderMonth()
             1 -> renderMonths()
-            else -> renderYear()
+            2 -> renderYear()
+            else -> renderCharges()
         }
         content.addView(text("Costs use your tariff and charger-efficiency settings; they are estimates, not a bill.", 11f, dim).apply { setPadding(0, dp(8), 0, 0) })
+    }
+
+    private fun renderCharges() {
+        content.addView(text("＋  Add a charge Overdrive missed", 14f, Color.BLACK, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = GradientDrawable().apply { setColor(accent); cornerRadius = dp(14).toFloat() }
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
+            setOnClickListener { showAddDialog() }
+        })
+        content.addView(text("This is every charge Overdrive recorded in the last 45 days. If one is missing or has no energy, compare with your charger app and add it by hand (kWh as shown by the charger). Tap a charge you added to remove it.", 12f, dim).apply { setPadding(0, 0, 0, dp(10)) })
+        val list = rows
+        if (list == null) {
+            content.addView(text(if (rowsFailed) "Couldn't reach the car. Check Tailscale, then tap ⟳." else "Loading…", 13f, dim))
+            return
+        }
+        if (list.isEmpty()) content.addView(text("No charges recorded in the last 45 days.", 13f, dim))
+        val day = SimpleDateFormat("EEE d MMM", Locale.getDefault())
+        val hm = SimpleDateFormat("HH:mm", Locale.getDefault())
+        for (r in list) {
+            val c = cardView()
+            val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            head.addView(text(day.format(Date(r.start)) + if (r.manual) "  (added by you)" else if (r.inProgress) "  (charging now)" else "", 14f, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+            head.addView(text(r.costPence?.let { money(it) } ?: "—", 16f, accent, true))
+            c.addView(head)
+            val mins = Math.max(0L, (r.end - r.start) / 60_000L)
+            c.addView(text("${hm.format(Date(r.start))} – ${if (r.inProgress) "now" else hm.format(Date(r.end))} · ${mins / 60}h ${mins % 60}m", 12f, dim).apply { setPadding(0, dp(2), 0, 0) })
+            val detail = StringBuilder()
+            if (r.kwh != null) detail.append(kwh(r.kwh)) else detail.append("no energy recorded")
+            r.avgKw?.let { detail.append(" · %.1f kW avg".format(it)) }
+            if (r.socStart != null && r.socEnd != null) detail.append(" · ${Math.round(r.socStart)}→${Math.round(r.socEnd)}%")
+            c.addView(text(detail.toString(), 12f, if (r.kwh == null) Color.parseColor("#FFC857") else dim).apply { setPadding(0, dp(2), 0, 0) })
+            if (r.manual) c.setOnClickListener {
+                AlertDialog.Builder(this).setTitle("Remove this charge?")
+                    .setMessage("${day.format(Date(r.start))} ${hm.format(Date(r.start))}–${hm.format(Date(r.end))}, ${kwh(r.kwh ?: 0.0)}")
+                    .setPositiveButton("Remove") { _, _ -> Config.removeManual(this, r.id); manualChanged() }
+                    .setNegativeButton("Keep", null).show()
+            }
+            content.addView(c)
+        }
+    }
+
+    private fun showAddDialog() {
+        val dateF = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        fun field(hint: String, value: String, number: Boolean = false) = EditText(this).apply {
+            this.hint = hint
+            setText(value)
+            setSingleLine()
+            if (number) inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        val d = field("Date it started (YYYY-MM-DD)", dateF.format(Date()))
+        val a = field("Start time (HH:MM)", "")
+        val b = field("End time (HH:MM)", "")
+        val k = field("Energy delivered (kWh)", "", number = true)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), 0, dp(20), 0)
+            listOf(d, a, b, k).forEach { addView(it) }
+        }
+        AlertDialog.Builder(this).setTitle("Add a charge")
+            .setMessage("Use the figures from your charger app. If it ends after midnight just enter the end time; the date is when it started.")
+            .setView(box)
+            .setPositiveButton("Add") { _, _ ->
+                try {
+                    val f = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+                    val start = f.parse(d.text.toString().trim() + " " + a.text.toString().trim())!!.time
+                    var end = f.parse(d.text.toString().trim() + " " + b.text.toString().trim())!!.time
+                    if (end <= start) end += 86_400_000L                       // finished after midnight
+                    val e = k.text.toString().trim().replace(',', '.').toDouble()
+                    if (e <= 0 || e > 300 || end - start > 48 * 3_600_000L || start > System.currentTimeMillis()) throw IllegalArgumentException()
+                    Config.addManual(this, start, end, e)
+                    manualChanged()
+                } catch (_: Exception) {
+                    Toast.makeText(this, "Couldn't add that - check the date, times and kWh", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun renderMonth() {

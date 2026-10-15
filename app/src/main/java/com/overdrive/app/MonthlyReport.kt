@@ -78,6 +78,7 @@ object MonthlyReport {
         var charged = 0.0
         var cost = 0.0
         var sessions = 0
+        val counted = ArrayList<LongArray>()      // Overdrive sessions already counted (start, end)
         off = 0
         // also fetch sessions that began up to 3 days earlier, so one that crossed into this period is included
         val sessFrom = from - 3 * 86_400_000L
@@ -96,6 +97,7 @@ object MonthlyReport {
                 val end = if (inProg) System.currentTimeMillis() else o.optLong("endTime", 0L)
                 val e = o.optDouble("energyAdded", Double.NaN)
                 if (start <= 0 || end <= 0 || e.isNaN() || e <= 0) continue
+                if (end > start) counted.add(longArrayOf(start, end))
                 if (end > start) {
                     val os = maxOf(start, from)
                     val oe = minOf(end, to)
@@ -113,7 +115,57 @@ object MonthlyReport {
             if (arr.length() < 200) break
             off += 200
         }
+        // charges added by hand from the charger app (energy at the meter, so no charger-loss gross-up);
+        // skipped when Overdrive already recorded that charge
+        val t0 = Config.Tariff(t.stdPence, t.cheapPence, t.startMin, t.endMin, 100.0)
+        for (m in Config.manualSessions(ctx)) {
+            val dur = m.end - m.start
+            if (dur <= 0 || m.kwh <= 0) continue
+            if (counted.any { r -> maxOf(0L, minOf(r[1], m.end) - maxOf(r[0], m.start)) > dur / 2 }) continue
+            val os = maxOf(m.start, from)
+            val oe = minOf(m.end, to)
+            if (oe <= os) continue
+            val part = m.kwh * (oe - os).toDouble() / dur
+            charged += part
+            cost += CarStatus.priceSession(os, oe, part, t0)
+            sessions++
+        }
         return Summary(km * 0.621371, kwh, charged, cost, trips, sessions)
+    }
+
+    /** One line of the Charges list. [kwh] is null when Overdrive recorded the session but no energy for it. */
+    class ChargeRow(val id: Long, val start: Long, val end: Long, val inProgress: Boolean, val kwh: Double?,
+                    val avgKw: Double?, val socStart: Double?, val socEnd: Double?, val costPence: Double?, val manual: Boolean)
+
+    /** Sessions from the last [days] days: Overdrive's own records plus your manual additions, newest first. */
+    fun chargeRows(ctx: Context, days: Int): List<ChargeRow>? {
+        val (base, cookie) = CarStatus.auth(ctx) ?: return null
+        val arr = CarStatus.getJson(base, "/api/charging?days=$days&limit=200&offset=0", cookie)
+            ?.optJSONArray("sessions") ?: return null
+        val t = Config.tariff(ctx)
+        val rows = ArrayList<ChargeRow>()
+        val counted = ArrayList<LongArray>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val start = o.optLong("startTime", 0L)
+            val inProg = o.optBoolean("inProgress", false)
+            val end = if (inProg) System.currentTimeMillis() else o.optLong("endTime", 0L)
+            val e = o.optDouble("energyAdded", Double.NaN).takeIf { !it.isNaN() && it > 0 }
+            val kw = o.optDouble("avgPower", Double.NaN).takeIf { !it.isNaN() && it > 0 }
+            val s0 = o.optDouble("startSoc", Double.NaN).takeIf { !it.isNaN() }
+            val s1 = o.optDouble("endSoc", Double.NaN).takeIf { !it.isNaN() }
+            val cost = if (e != null && start > 0 && end > 0) CarStatus.priceSession(start, end, e, t) else null
+            if (e != null && end > start) counted.add(longArrayOf(start, end))
+            rows.add(ChargeRow(o.optLong("id", 0L), start, end, inProg, e, kw, s0, s1, cost, false))
+        }
+        val t0 = Config.Tariff(t.stdPence, t.cheapPence, t.startMin, t.endMin, 100.0)
+        val since = System.currentTimeMillis() - days * 86_400_000L
+        for (m in Config.manualSessions(ctx)) {
+            if (m.end < since) continue
+            rows.add(ChargeRow(m.id, m.start, m.end, false, m.kwh, null, null, null,
+                CarStatus.priceSession(m.start, m.end, m.kwh, t0), true))
+        }
+        return rows.sortedByDescending { it.start }
     }
 
     private fun notify(ctx: Context, monthLabel: String, period: String, s: Summary) {

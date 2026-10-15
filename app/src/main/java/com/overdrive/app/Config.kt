@@ -1,6 +1,8 @@
 package com.overdrive.app
 
 import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** User-configured Overdrive address, stored only on the device (never in the repo). */
 object Config {
@@ -30,6 +32,25 @@ object Config {
         prefs(c).edit().putInt("climateMin", v).apply()
         return true
     }
+
+    /** A charge Overdrive missed, entered by hand from the charger app (kWh = energy delivered, i.e. at the meter). */
+    class Manual(val id: Long, val start: Long, val end: Long, val kwh: Double)
+
+    fun manualSessions(c: Context): List<Manual> = try {
+        val a = JSONArray(prefs(c).getString("manual", "[]"))
+        (0 until a.length()).map { val o = a.getJSONObject(it); Manual(o.getLong("id"), o.getLong("s"), o.getLong("e"), o.getDouble("k")) }
+    } catch (_: Exception) { emptyList() }
+
+    private fun saveManual(c: Context, list: List<Manual>) {
+        val a = JSONArray()
+        list.forEach { a.put(JSONObject().put("id", it.id).put("s", it.start).put("e", it.end).put("k", it.kwh)) }
+        prefs(c).edit().putString("manual", a.toString()).apply()
+    }
+
+    fun addManual(c: Context, start: Long, end: Long, kwh: Double) =
+        saveManual(c, manualSessions(c) + Manual(System.currentTimeMillis(), start, end, kwh))
+
+    fun removeManual(c: Context, id: Long) = saveManual(c, manualSessions(c).filter { it.id != id })
 
     /** Monthly summary notification on the 1st (default on). */
     fun monthlyEnabled(c: Context): Boolean = prefs(c).getBoolean("monthly", true)

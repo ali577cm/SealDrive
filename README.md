@@ -33,6 +33,9 @@ Tap the small chart icon at the top right of the main screen (or long-press the 
 month so far, the last 12 months, and this/last year: charging cost (your tariff), miles driven and kWh used. Finished months are
 cached on the phone; tap the refresh arrow to recalculate.
 
+The **Charges** tab lists every charge Overdrive recorded in the last 45 days. If Overdrive missed one (it can miss charges that
+start while the car is asleep), add it by hand from your charger app and it is included in every total.
+
 ## Monthly summary
 On the 1st of each month (and only the 1st) BYDrive can send a notification with last month's charging cost (priced with your
 tariff), miles driven and kWh used. The car must be reachable (Tailscale connected) that day; it tries every ~3 hours on the

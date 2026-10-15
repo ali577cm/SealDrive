@@ -146,17 +146,30 @@ object CarStatus {
 
     /** Cost of the most recent COMPLETED charge: its kWh split across the cheap and standard minutes it actually ran. */
     private fun lastChargeCost(ctx: Context, base: String, cookie: String): Double? {
-        val arr = fetchSessions(base, cookie, 90, 10, 0) ?: return null     // newest first
+        val arr = fetchSessions(base, cookie, 90, 10, 0)         // newest first
         val t = Config.tariff(ctx)
-        for (i in 0 until arr.length()) {
+        var odStart = 0L
+        var odEnd = 0L
+        var odCost: Double? = null
+        if (arr != null) for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             if (o.optBoolean("inProgress", false)) continue
             val start = o.optLong("startTime", 0L)
             val end = o.optLong("endTime", 0L)
             val e = o.optDouble("energyAdded", Double.NaN)
-            if (start > 0 && end > 0 && !e.isNaN() && e > 0) return priceSession(start, end, e, t)
+            if (start > 0 && end > 0 && !e.isNaN() && e > 0) { odStart = start; odEnd = end; odCost = priceSession(start, end, e, t); break }
         }
-        return null
+        // a charge you added by hand that is newer than Overdrive's latest (and not the same charge) wins
+        val t0 = Config.Tariff(t.stdPence, t.cheapPence, t.startMin, t.endMin, 100.0)
+        val m = Config.manualSessions(ctx).filter { it.end <= System.currentTimeMillis() && it.kwh > 0 && it.end > it.start }
+            .maxByOrNull { it.start }
+        if (m != null && (odCost == null || m.start > odStart)) {
+            val dur = m.end - m.start
+            val same = odCost != null && maxOf(0L, minOf(odEnd, m.end) - maxOf(odStart, m.start)) > dur / 2
+            if (!same) return priceSession(m.start, m.end, m.kwh, t0)
+        }
+        if (arr == null && m == null) return null
+        return odCost
     }
 
     // ---------------- time-of-day pricing of charging sessions ----------------
