@@ -9,7 +9,11 @@ import android.widget.EditText
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
 import android.widget.ArrayAdapter
+import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.Spinner
@@ -88,7 +92,25 @@ class MainActivity : Activity() {
             // long-press on the error screen to change the address
             setOnLongClickListener { if (failed) { askAddress(); true } else false }
         }
-        setContentView(web)
+        val statsBtn = ImageButton(this).apply {
+            setImageResource(R.drawable.ic_stats)
+            contentDescription = "Usage and costs"
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xCC12263D.toInt())
+                setStroke(dp(1), 0x6622405E)
+            }
+            setOnClickListener { startActivity(Intent(this@MainActivity, StatsActivity::class.java)) }
+        }
+        setContentView(FrameLayout(this).apply {
+            addView(web, FrameLayout.LayoutParams(-1, -1))
+            addView(statsBtn, FrameLayout.LayoutParams(dp(42), dp(42)).apply {
+                gravity = Gravity.TOP or Gravity.END
+                topMargin = dp(8)
+                marginEnd = dp(8)
+            })
+        })
         if (savedInstanceState != null) web.restoreState(savedInstanceState) else {
             val u = url
             if (u == null) askAddress() else web.loadUrl(u)
@@ -106,6 +128,8 @@ class MainActivity : Activity() {
         handleIntent(intent)
     }
 
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
     /** Asks once (Android 13+) for permission to show the monthly summary notification. */
     private fun askNotificationPermission() {
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -116,6 +140,7 @@ class MainActivity : Activity() {
     /** Launcher shortcut "Settings & updates" opens the address / update dialog. */
     private fun handleIntent(i: Intent?) {
         if (i?.action == "com.overdrive.app.SETTINGS") askAddress()
+        if (i?.action == "com.overdrive.app.STATS") startActivity(Intent(this, StatsActivity::class.java))
         if (i?.action == "com.overdrive.app.MONTHLY_TEST") {
             askNotificationPermission()
             Toast.makeText(this, "Preparing last month's summary…", Toast.LENGTH_SHORT).show()

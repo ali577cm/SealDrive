@@ -28,6 +28,11 @@ The workflow needs repo secrets `KEYSTORE_B64` and `KEYSTORE_PASSWORD`.
 ## License
 MIT, see [LICENSE](LICENSE). The app icon is an original illustration and is not an official logo of any brand. Widget icon credits: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+## Usage & costs screen
+Tap the small chart icon at the top right of the main screen (or long-press the app icon -> "Usage & costs"). Tabs show this
+month so far, the last 12 months, and this/last year: charging cost (your tariff), miles driven and kWh used. Finished months are
+cached on the phone; tap the refresh arrow to recalculate.
+
 ## Monthly summary
 On the 1st of each month (and only the 1st) BYDrive can send a notification with last month's charging cost (priced with your
 tariff), miles driven and kWh used. The car must be reachable (Tailscale connected) that day; it tries every ~3 hours on the

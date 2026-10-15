@@ -29,7 +29,10 @@ object MonthlyReport {
     class Summary(
         val miles: Double, val kwhUsed: Double, val kwhCharged: Double,
         val costPence: Double, val trips: Int, val sessions: Int,
-    )
+    ) {
+        operator fun plus(o: Summary) = Summary(miles + o.miles, kwhUsed + o.kwhUsed, kwhCharged + o.kwhCharged,
+            costPence + o.costPence, trips + o.trips, sessions + o.sessions)
+    }
 
     /** Local midnight at the start of the month [offsetMonths] away from the current one. */
     private fun monthStart(offsetMonths: Int): Long {
@@ -51,7 +54,7 @@ object MonthlyReport {
      * Trips count in the month they START. Charging sessions are split at the month boundaries: each month gets
      * only its share of the energy (spread evenly over the session), priced at the rates that applied then.
      */
-    fun compute(ctx: Context, from: Long, to: Long): Summary? {
+    fun compute(ctx: Context, from: Long, to: Long, live: Boolean = false): Summary? {
         val (base, cookie) = CarStatus.auth(ctx) ?: return null
         var km = 0.0
         var kwh = 0.0
@@ -84,11 +87,13 @@ object MonthlyReport {
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
                 val start = o.optLong("startTime", 0L)
-                if (o.optBoolean("inProgress", false)) {
+                val inProg = o.optBoolean("inProgress", false)
+                if (inProg && !live) {
                     if (start in 1 until to) return null            // still charging from last month: wait and retry
                     continue
                 }
-                val end = o.optLong("endTime", 0L)
+                // month-to-date (live): a session still running counts up to now
+                val end = if (inProg) System.currentTimeMillis() else o.optLong("endTime", 0L)
                 val e = o.optDouble("energyAdded", Double.NaN)
                 if (start <= 0 || end <= 0 || e.isNaN() || e <= 0) continue
                 if (end > start) {

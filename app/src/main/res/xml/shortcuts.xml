@@ -22,4 +22,15 @@
             android:targetClass="com.overdrive.app.MainActivity"
             android:targetPackage="com.overdrive.app" />
     </shortcut>
+    <shortcut
+        android:shortcutId="stats"
+        android:enabled="true"
+        android:icon="@drawable/ic_stats"
+        android:shortcutShortLabel="@string/shortcut_stats"
+        android:shortcutLongLabel="@string/shortcut_stats">
+        <intent
+            android:action="com.overdrive.app.STATS"
+            android:targetClass="com.overdrive.app.MainActivity"
+            android:targetPackage="com.overdrive.app" />
+    </shortcut>
 </shortcuts>
