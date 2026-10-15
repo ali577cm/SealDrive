@@ -6,4 +6,5 @@
     <string name="widget_climate_desc">Tap to turn on the car climate at your set temperature</string>
     <string name="shortcut_monthly">Send monthly summary now</string>
     <string name="shortcut_stats">Usage &amp; costs</string>
+    <string name="widget_cpd_desc">Tap to turn off Child Presence Detection</string>
 </resources>

@@ -250,6 +250,7 @@ class MainActivity : Activity() {
                     if (!Config.setClimateMinutes(this, minInput.text.toString()))
                         Toast.makeText(this, "Run time not saved - use 10, 15, 20, 25 or 30", Toast.LENGTH_LONG).show()
                     SealDriveClimateWidget.redraw(this)
+                    SealDriveCpdWidget.redraw(this)
                     Config.setTariff(this, stdInput.text.toString(), cheapInput.text.toString(), windowInput.text.toString(), effInput.text.toString())
                         ?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
                     url = saved
