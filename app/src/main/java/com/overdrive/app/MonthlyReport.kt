@@ -185,6 +185,9 @@ object MonthlyReport {
             .setStyle(Notification.BigTextStyle().bigText(big))
             .setContentIntent(open)
             .setAutoCancel(true)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)       // amounts are hidden on the lock screen
+            .setPublicVersion(Notification.Builder(ctx, CHANNEL).setSmallIcon(R.drawable.ic_bolt)
+                .setContentTitle("BYDrive").setContentText("Monthly summary ready").build())
             .build()
         nm.notify(NOTIF_ID, n)
     }

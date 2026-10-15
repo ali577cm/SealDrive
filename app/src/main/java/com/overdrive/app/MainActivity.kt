@@ -35,6 +35,7 @@ class MainActivity : Activity() {
     private var lastCheck = 0L
     private var updateDialogShowing = false
     private var tsDialogShowing = false
+    private var lastMonthlyTest = 0L
     private lateinit var web: WebView
     private val handler = Handler(Looper.getMainLooper())
     private var failed = false
@@ -43,6 +44,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        WebView.setWebContentsDebuggingEnabled(false)
         url = Config.url(this)
         web = WebView(this).apply {
             setBackgroundColor(0xFF000000.toInt())
@@ -80,15 +82,21 @@ class MainActivity : Activity() {
                         handler.postDelayed({ if (failed) this@MainActivity.url?.let { v.loadUrl(it) } }, 5000)
                     }
                 }
-                // Only the configured Overdrive host may load in the app; anything else opens in the browser
+                // Only the configured Overdrive address (same host AND port) may load inside the app.
+                // Plain web links open in the browser; every other scheme (data:, file:, intent:, content:, ...) is blocked.
                 override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
-                    val home = this@MainActivity.url?.let { android.net.Uri.parse(it).host }
-                    if (r.url.scheme == "data" || (home != null && r.url.host == home)) return false
-                    try { startActivity(Intent(Intent.ACTION_VIEW, r.url)) } catch (_: Exception) {}
+                    val home = this@MainActivity.url?.let { android.net.Uri.parse(it) }
+                    val u = r.url
+                    val isWeb = u.scheme == "http" || u.scheme == "https"
+                    if (isWeb && home != null && u.host == home.host && u.port == home.port) return false
+                    if (isWeb) try {
+                        startActivity(Intent(Intent.ACTION_VIEW, u).addCategory(Intent.CATEGORY_BROWSABLE))
+                    } catch (_: Exception) {}
                     return true
                 }
             }
             webChromeClient = WebChromeClient()
+            filterTouchesWhenObscured = true
             // long-press on the error screen to change the address
             setOnLongClickListener { if (failed) { askAddress(); true } else false }
         }
@@ -104,6 +112,7 @@ class MainActivity : Activity() {
             setOnClickListener { startActivity(Intent(this@MainActivity, StatsActivity::class.java)) }
         }
         setContentView(FrameLayout(this).apply {
+            filterTouchesWhenObscured = true          // ignore taps while another app draws over this one (tapjacking)
             addView(web, FrameLayout.LayoutParams(-1, -1))
             addView(statsBtn, FrameLayout.LayoutParams(dp(42), dp(42)).apply {
                 gravity = Gravity.TOP or Gravity.END
@@ -141,7 +150,8 @@ class MainActivity : Activity() {
     private fun handleIntent(i: Intent?) {
         if (i?.action == "com.overdrive.app.SETTINGS") askAddress()
         if (i?.action == "com.overdrive.app.STATS") startActivity(Intent(this, StatsActivity::class.java))
-        if (i?.action == "com.overdrive.app.MONTHLY_TEST") {
+        if (i?.action == "com.overdrive.app.MONTHLY_TEST" && System.currentTimeMillis() - lastMonthlyTest > 60_000L) {
+            lastMonthlyTest = System.currentTimeMillis()     // this activity is launchable by other apps, so rate-limit the test
             askNotificationPermission()
             Toast.makeText(this, "Preparing last month's summary…", Toast.LENGTH_SHORT).show()
             thread {
@@ -228,7 +238,7 @@ class MainActivity : Activity() {
             .setPositiveButton("Save") { _, _ ->
                 val saved = Config.setUrl(this, input.text.toString())
                 if (saved == null) {
-                    Toast.makeText(this, "That doesn't look like a valid address", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Not a valid address. Use https:// unless it is a Tailscale or home-network address.", Toast.LENGTH_LONG).show()
                     askAddress()
                 } else {
                     Config.setBg(this, bgSpinner.selectedItemPosition)
@@ -286,6 +296,9 @@ class MainActivity : Activity() {
                         if (apk == null) {
                             Toast.makeText(this, "Download failed - opening the download page", Toast.LENGTH_LONG).show()
                             openReleasePage()
+                        } else if (!Updater.verify(this, apk)) {
+                            apk.delete()
+                            Toast.makeText(this, "The downloaded update failed the signature check, so it was not installed.", Toast.LENGTH_LONG).show()
                         } else if (!Updater.install(this, apk)) {
                             Toast.makeText(this, "Allow installs from BYDrive, then use Check for updates again", Toast.LENGTH_LONG).show()
                         }
@@ -334,7 +347,7 @@ class MainActivity : Activity() {
         val href = url ?: ""
         return """
         <body style="background:#000;color:#ccc;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center">
-        <div><h2>Can't reach Overdrive</h2><p>$msg</p><p>Check that Tailscale/Overdrive is running.<br>Retrying every 5 seconds…<br><small>Long-press this screen to change the address.</small></p><p><button onclick="location.href='$href'" style="font-size:18px;padding:12px 28px;border:0;border-radius:8px;background:#2BD4A7;color:#000">Reconnect</button></p></div></body>"""
+        <div><h2>Can't reach Overdrive</h2><p>${android.text.TextUtils.htmlEncode(msg)}</p><p>Check that Tailscale/Overdrive is running.<br>Retrying every 5 seconds…<br><small>Long-press this screen to change the address.</small></p><p><button onclick="location.href='$href'" style="font-size:18px;padding:12px 28px;border:0;border-radius:8px;background:#2BD4A7;color:#000">Reconnect</button></p></div></body>"""
     }
 
     private fun hideSystemUi() {

@@ -2,6 +2,8 @@ package com.overdrive.app
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import java.security.MessageDigest
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -83,12 +85,44 @@ object Updater {
             c.connectTimeout = 10000
             c.readTimeout = 30000
             if (c.responseCode != 200) return null
-            c.inputStream.use { i -> out.outputStream().use { o -> i.copyTo(o) } }
+            var total = 0L
+            c.inputStream.use { i ->
+                out.outputStream().use { o ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = i.read(buf)
+                        if (n < 0) break
+                        total += n
+                        if (total > 150L * 1024 * 1024) { out.delete(); return null }     // refuse absurdly large files
+                        o.write(buf, 0, n)
+                    }
+                }
+            }
+            if (total < 100_000L) { out.delete(); return null }                              // too small to be an APK
             return out
         } catch (_: Exception) { return null }
     }
 
     /** Opens the system installer. If "install unknown apps" isn't granted yet, opens that setting instead. */
+    private fun sha256(b: ByteArray) = MessageDigest.getInstance("SHA-256").digest(b).joinToString("") { "%02x".format(it) }
+
+    /**
+     * Defence in depth: the downloaded APK must be signed with the same key as the installed app, otherwise it is
+     * discarded before the installer is even shown. (Android enforces this again at install time.)
+     */
+    @Suppress("DEPRECATION")
+    fun verify(ctx: Context, apk: File): Boolean {
+        if (Build.VERSION.SDK_INT < 28) return true            // Android still enforces the signature on install
+        return try {
+            val pm = ctx.packageManager
+            val mine = pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNING_CERTIFICATES).signingInfo ?: return false
+            val theirs = pm.getPackageArchiveInfo(apk.path, PackageManager.GET_SIGNING_CERTIFICATES)?.signingInfo ?: return false
+            fun certs(si: android.content.pm.SigningInfo) =
+                (if (si.hasMultipleSigners()) si.apkContentsSigners else si.signingCertificateHistory).map { sha256(it.toByteArray()) }.toSet()
+            certs(mine).intersect(certs(theirs)).isNotEmpty()
+        } catch (_: Exception) { false }
+    }
+
     fun install(ctx: Context, apk: File): Boolean {
         if (Build.VERSION.SDK_INT >= 26 && !ctx.packageManager.canRequestPackageInstalls()) {
             ctx.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}"))

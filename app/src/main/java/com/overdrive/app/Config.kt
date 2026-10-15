@@ -94,12 +94,24 @@ object Config {
 
     fun url(c: Context): String? = prefs(c).getString("url", null)
 
+    /** Plain http is only acceptable for Tailscale (already encrypted), loopback and private home-network addresses. */
+    private fun httpAllowed(u: String): Boolean {
+        val host = try { android.net.Uri.parse(u).host } catch (_: Exception) { null } ?: return false
+        if (Tailscale.isTailscaleAddress(u) || host == "localhost" || host.endsWith(".local")) return true
+        val p = host.split(".")
+        if (p.size != 4) return false
+        val a = p[0].toIntOrNull()
+        val b = p[1].toIntOrNull()
+        return a == 10 || a == 127 || (a == 192 && b == 168) || (a == 172 && b != null && b in 16..31)
+    }
+
     /** Normalises and saves the address; returns it, or null if it isn't a valid http(s) URL. */
     fun setUrl(c: Context, raw: String): String? {
         var u = raw.trim()
         if (u.isEmpty()) return null
         if (!u.contains("://")) u = "http://$u"
         if (!Regex("^https?://[^\\s'\"<>\\\\]+$").matches(u)) return null
+        if (u.startsWith("http://") && !httpAllowed(u)) return null       // plain http only inside Tailscale / your own network
         prefs(c).edit().putString("url", u).apply()
         return u
     }
