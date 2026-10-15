@@ -229,6 +229,13 @@ class StatsActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
             setOnClickListener { showAddDialog() }
         })
+        content.addView(text("＋  Add several days at once", 14f, accent, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = GradientDrawable().apply { setColor(card); cornerRadius = dp(14).toFloat(); setStroke(dp(1), accent) }
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
+            setOnClickListener { showBulkDialog() }
+        })
         content.addView(text("This is every charge Overdrive recorded in the last 45 days. If one is missing or has no energy, compare with your charger app and add it by hand (kWh as shown by the charger). Tap a charge you added to remove it.", 12f, dim).apply { setPadding(0, 0, 0, dp(10)) })
         val list = rows
         if (list == null) {
@@ -259,6 +266,58 @@ class StatsActivity : Activity() {
             }
             content.addView(c)
         }
+    }
+
+    /** One line per day: "YYYY-MM-DD kWh" with an optional "HH:MM-HH:MM"; defaults to the cheap-rate window. Returns (added, skipped). */
+    private fun addBulk(textBlock: String): Pair<Int, Int> {
+        val t = Config.tariff(this)
+        val f = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+        val existing = Config.manualSessions(this)
+        var added = 0
+        var skipped = 0
+        for (raw in textBlock.lines()) {
+            val line = raw.trim()
+            if (line.isEmpty()) continue
+            try {
+                val parts = line.split(Regex("[\\s,;]+")).filter { it.isNotEmpty() }
+                val date = parts.first { Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(it) }
+                val win = parts.firstOrNull { it.contains(':') && it.contains('-') }
+                val kwh = parts.first { it != date && it != win }.replace(',', '.').toDouble()
+                val (sMin, eMin) = if (win != null) {
+                    val m = Regex("^(\\d{1,2}):(\\d{2})-(\\d{1,2}):(\\d{2})$").matchEntire(win)!!.destructured
+                    (m.component1().toInt() * 60 + m.component2().toInt()) to (m.component3().toInt() * 60 + m.component4().toInt())
+                } else t.startMin to t.endMin
+                val day = f.parse("$date 00:00")!!.time
+                val start = day + sMin * 60_000L
+                var end = day + eMin * 60_000L
+                if (end <= start) end += 86_400_000L
+                if (kwh <= 0 || kwh > 300 || end - start > 48 * 3_600_000L || start > System.currentTimeMillis()) { skipped++; continue }
+                if (existing.any { Math.abs(it.start - start) < 60_000L && Math.abs(it.end - end) < 60_000L && Math.abs(it.kwh - kwh) < 0.05 }) { skipped++; continue }
+                Config.addManual(this, start, end, kwh)
+                added++
+            } catch (_: Exception) { skipped++ }
+        }
+        return added to skipped
+    }
+
+    private fun showBulkDialog() {
+        val input = EditText(this).apply {
+            hint = "2026-10-02 37.0\n2026-10-03 39.0"
+            minLines = 8
+            gravity = Gravity.TOP
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        val box = LinearLayout(this).apply { setPadding(dp(20), 0, dp(20), 0); addView(input, LinearLayout.LayoutParams(-1, -2)) }
+        AlertDialog.Builder(this).setTitle("Add several days")
+            .setMessage("One day per line: the date and the kWh from your charger, e.g. 2026-10-02 37.0\nEach is assumed to run inside your cheap-rate window (${Config.windowText(this)}). To override, add a time range: 2026-10-13 00:29-05:29 35.69")
+            .setView(ScrollView(this).apply { addView(box) })
+            .setPositiveButton("Add") { _, _ ->
+                val (a, s) = addBulk(input.text.toString())
+                Toast.makeText(this, "Added $a" + if (s > 0) ", skipped $s (bad line or already added)" else "", Toast.LENGTH_LONG).show()
+                if (a > 0) manualChanged()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showAddDialog() {
