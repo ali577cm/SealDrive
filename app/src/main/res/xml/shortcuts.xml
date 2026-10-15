@@ -11,4 +11,15 @@
             android:targetClass="com.overdrive.app.MainActivity"
             android:targetPackage="com.overdrive.app" />
     </shortcut>
+    <shortcut
+        android:shortcutId="monthly"
+        android:enabled="true"
+        android:icon="@drawable/ic_bolt"
+        android:shortcutShortLabel="@string/shortcut_monthly"
+        android:shortcutLongLabel="@string/shortcut_monthly">
+        <intent
+            android:action="com.overdrive.app.MONTHLY_TEST"
+            android:targetClass="com.overdrive.app.MainActivity"
+            android:targetPackage="com.overdrive.app" />
+    </shortcut>
 </shortcuts>

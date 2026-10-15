@@ -6,7 +6,11 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.text.InputType
 import android.widget.EditText
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.ArrayAdapter
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.Toast
@@ -26,6 +30,7 @@ class MainActivity : Activity() {
     private var failCount = 0
     private var lastCheck = 0L
     private var updateDialogShowing = false
+    private var tsDialogShowing = false
     private lateinit var web: WebView
     private val handler = Handler(Looper.getMainLooper())
     private var failed = false
@@ -65,7 +70,9 @@ class MainActivity : Activity() {
                         failed = true
                         // after a few failures, offer to fix the address (once per streak)
                         if (++failCount == 3) askAddress()
-                        v.loadData(errorHtml(e.description?.toString() ?: "Connection failed"), "text/html", "utf-8")
+                        val tsOff = Tailscale.isTailscaleAddress(this@MainActivity.url) && !Tailscale.isConnected()
+                        v.loadData(errorHtml(if (tsOff) "Tailscale isn't connected - please open Tailscale and connect."
+                            else (e.description?.toString() ?: "Connection failed")), "text/html", "utf-8")
                         handler.postDelayed({ if (failed) this@MainActivity.url?.let { v.loadUrl(it) } }, 5000)
                     }
                 }
@@ -87,6 +94,10 @@ class MainActivity : Activity() {
             if (u == null) askAddress() else web.loadUrl(u)
         }
         handleIntent(intent)
+        if (Config.monthlyEnabled(this) && !getSharedPreferences("monthly", MODE_PRIVATE).getBoolean("asked", false)) {
+            getSharedPreferences("monthly", MODE_PRIVATE).edit().putBoolean("asked", true).apply()
+            askNotificationPermission()
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -95,9 +106,26 @@ class MainActivity : Activity() {
         handleIntent(intent)
     }
 
+    /** Asks once (Android 13+) for permission to show the monthly summary notification. */
+    private fun askNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 7)
+    }
+
     /** Launcher shortcut "Settings & updates" opens the address / update dialog. */
     private fun handleIntent(i: Intent?) {
         if (i?.action == "com.overdrive.app.SETTINGS") askAddress()
+        if (i?.action == "com.overdrive.app.MONTHLY_TEST") {
+            askNotificationPermission()
+            Toast.makeText(this, "Preparing last month's summary…", Toast.LENGTH_SHORT).show()
+            thread {
+                val ok = MonthlyReport.checkAndSend(this, test = true)
+                runOnUiThread {
+                    Toast.makeText(this, if (ok) "Summary sent - check your notifications" else "Couldn't reach the car (check Tailscale and that you're signed in)", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     /** Prompts for the Overdrive address and stores it on the device only. */
@@ -138,6 +166,10 @@ class MainActivity : Activity() {
             setText(Config.climateMinutes(this@MainActivity).toString())
             setSingleLine()
         }
+        val monthlyBox = CheckBox(this).apply {
+            text = "Monthly summary notification on the 1st"
+            isChecked = Config.monthlyEnabled(this@MainActivity)
+        }
         val bgSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
                 arrayOf("Widget background: Transparent", "Widget background: Glass", "Widget background: Solid"))
@@ -153,6 +185,7 @@ class MainActivity : Activity() {
             addView(windowInput)
             addView(tempInput)
             addView(minInput)
+            addView(monthlyBox)
             addView(bgSpinner)
         }
         val d = AlertDialog.Builder(this)
@@ -167,6 +200,9 @@ class MainActivity : Activity() {
                     askAddress()
                 } else {
                     Config.setBg(this, bgSpinner.selectedItemPosition)
+                    Config.setMonthlyEnabled(this, monthlyBox.isChecked)
+                    MonthlyReport.schedule(this)
+                    if (monthlyBox.isChecked) askNotificationPermission()
                     if (!Config.setClimateTemp(this, tempInput.text.toString()))
                         Toast.makeText(this, "Climate temperature not saved - use 17 to 33", Toast.LENGTH_LONG).show()
                     if (!Config.setClimateMinutes(this, minInput.text.toString()))
@@ -197,7 +233,7 @@ class MainActivity : Activity() {
                 when {
                     r == null -> if (manual) Toast.makeText(this, "Update check failed: ${res.error}", Toast.LENGTH_LONG).show()
                     r.code <= Updater.installedCode(this) ->
-                        if (manual) Toast.makeText(this, "SealDrive is up to date (build ${Updater.installedCode(this)})", Toast.LENGTH_LONG).show()
+                        if (manual) Toast.makeText(this, "BYDrive is up to date (build ${Updater.installedCode(this)})", Toast.LENGTH_LONG).show()
                     else -> showUpdateDialog(r)
                 }
             }
@@ -209,7 +245,7 @@ class MainActivity : Activity() {
         updateDialogShowing = true
         AlertDialog.Builder(this)
             .setTitle("Update available")
-            .setMessage("A new version of SealDrive (build ${r.code}) is ready to install.")
+            .setMessage("A new version of BYDrive (build ${r.code}) is ready to install.")
             .setPositiveButton("Update") { _, _ ->
                 Toast.makeText(this, "Downloading update…", Toast.LENGTH_SHORT).show()
                 thread {
@@ -219,7 +255,7 @@ class MainActivity : Activity() {
                             Toast.makeText(this, "Download failed - opening the download page", Toast.LENGTH_LONG).show()
                             openReleasePage()
                         } else if (!Updater.install(this, apk)) {
-                            Toast.makeText(this, "Allow installs from SealDrive, then use Check for updates again", Toast.LENGTH_LONG).show()
+                            Toast.makeText(this, "Allow installs from BYDrive, then use Check for updates again", Toast.LENGTH_LONG).show()
                         }
                     }
                 }
@@ -228,6 +264,34 @@ class MainActivity : Activity() {
             .setNegativeButton("Later", null)
             .setOnDismissListener { updateDialogShowing = false }
             .show()
+    }
+
+    /** If the car's address needs Tailscale and it isn't connected, tell the user (after a quick reachability check). */
+    private fun checkTailscale() {
+        val u = url ?: return
+        if (!Tailscale.isTailscaleAddress(u) || Tailscale.isConnected()) return
+        thread {
+            if (Tailscale.reachable(u)) return@thread      // reachable anyway, so don't nag
+            runOnUiThread { showTailscaleDialog() }
+        }
+    }
+
+    private fun showTailscaleDialog() {
+        if (isFinishing || tsDialogShowing) return
+        tsDialogShowing = true
+        AlertDialog.Builder(this)
+            .setTitle("Tailscale isn't connected")
+            .setMessage("BYDrive needs Tailscale to reach your car. Please open Tailscale and connect, then come back to this app.")
+            .setPositiveButton("Open Tailscale") { _, _ -> openTailscale() }
+            .setNeutralButton("Retry") { _, _ -> url?.let { web.loadUrl(it) }; checkTailscale() }
+            .setNegativeButton("Dismiss", null)
+            .setOnDismissListener { tsDialogShowing = false }
+            .show()
+    }
+
+    private fun openTailscale() {
+        val i = packageManager.getLaunchIntentForPackage("com.tailscale.ipn")
+        if (i != null) startActivity(i) else Toast.makeText(this, "Tailscale isn't installed on this phone", Toast.LENGTH_LONG).show()
     }
 
     private fun openReleasePage() {
@@ -261,6 +325,8 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         web.onResume()
+        checkTailscale()
+        MonthlyReport.schedule(this)
         if (failed) url?.let { web.loadUrl(it) }
         if (System.currentTimeMillis() - lastCheck > 6 * 3600_000L) checkForUpdate()
         // keep the widget fresh whenever the app is opened, and make sure its background refresh is scheduled

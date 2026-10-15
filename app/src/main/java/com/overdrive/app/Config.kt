@@ -31,6 +31,11 @@ object Config {
         return true
     }
 
+    /** Monthly summary notification on the 1st (default on). */
+    fun monthlyEnabled(c: Context): Boolean = prefs(c).getBoolean("monthly", true)
+
+    fun setMonthlyEnabled(c: Context, on: Boolean) { prefs(c).edit().putBoolean("monthly", on).apply() }
+
     /** Time-of-day electricity tariff (pence per kWh): a cheap window and a standard rate the rest of the day. */
     class Tariff(val stdPence: Double, val cheapPence: Double, val startMin: Int, val endMin: Int) {
         fun signature() = "$stdPence|$cheapPence|$startMin|$endMin"

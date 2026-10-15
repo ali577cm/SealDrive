@@ -1,4 +1,4 @@
-# SealDrive (unofficial)
+# BYDrive (unofficial)
 
 A small Android app that shows your own Overdrive page fullscreen, without browser chrome.
 On first launch it asks for your Overdrive address (e.g. `http://100.x.x.x:8080`); the address is stored only on your device.
@@ -27,6 +27,14 @@ The workflow needs repo secrets `KEYSTORE_B64` and `KEYSTORE_PASSWORD`.
 
 ## License
 MIT, see [LICENSE](LICENSE). The app icon is an original illustration and is not an official logo of any brand. Widget icon credits: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Monthly summary
+On the 1st of each month BYDrive can send a notification with last month's charging cost (priced with your tariff), miles
+driven and kWh used. It needs the car to be reachable (Tailscale connected) at some point on or after the 1st and tries again
+every ~6 hours until it succeeds. Switch it off in Settings & updates. Long-press the app icon -> "Send monthly summary now" to preview it.
+
+## Tailscale
+If your Overdrive address is a Tailscale address and Tailscale isn't connected, the app tells you to connect it.
 
 ## Updating
 The app checks for new releases when it opens. To check manually, long-press the app icon and choose "Settings & updates", then "Check for updates".

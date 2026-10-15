@@ -25,7 +25,7 @@ object Updater {
     }
 
     const val RELEASES = "https://github.com/ali577cm/SealDrive/releases/latest"
-    private const val APK_URL = "$RELEASES/download/SealDrive.apk"
+    private const val APK_URL = "$RELEASES/download/BYDrive.apk"
 
     class Check(val release: Release?, val error: String?)
 
@@ -78,7 +78,7 @@ object Updater {
     fun download(ctx: Context, r: Release): File? {
         try {
             val dir = File(ctx.cacheDir, "updates").apply { mkdirs() }
-            val out = File(dir, "SealDrive.apk")
+            val out = File(dir, "BYDrive.apk")
             val c = URL(r.apkUrl).openConnection() as HttpURLConnection
             c.connectTimeout = 10000
             c.readTimeout = 30000

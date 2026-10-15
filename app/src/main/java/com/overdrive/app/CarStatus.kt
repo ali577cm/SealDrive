@@ -54,7 +54,7 @@ object CarStatus {
     } catch (e: IOException) { Resp(-1, null, e.javaClass.simpleName) }
 
     /** Energy for one trip: measured when available, else Overdrive's estimate (energyPerKm in kWh/km x distance). */
-    private fun tripEnergy(o: JSONObject): Double {
+    internal fun tripEnergy(o: JSONObject): Double {
         var e = o.optDouble("energyUsedKwh", 0.0)
         if (e.isNaN() || e <= 0) {
             val perKm = o.optDouble("energyPerKm", 0.0)
@@ -149,7 +149,7 @@ object CarStatus {
     }
 
     /** Cost in pence of [kwh] delivered evenly between [start] and [end], split by the cheap/standard windows. */
-    private fun priceSession(start: Long, end: Long, kwh: Double, t: Config.Tariff): Double {
+    internal fun priceSession(start: Long, end: Long, kwh: Double, t: Config.Tariff): Double {
         if (kwh <= 0) return 0.0
         if (end <= start) return kwh * (if (cheapOverlapMs(start, start + 1, t) > 0) t.cheapPence else t.stdPence)
         val cheapFrac = cheapOverlapMs(start, end, t).toDouble() / (end - start)
@@ -239,6 +239,16 @@ object CarStatus {
         return ChargeCosts((histSum + recentSum) / days, liveStart, liveKwh)
     }
 
+    /** Address + login cookie, or null when not set up / not signed in. */
+    internal fun auth(ctx: Context): Pair<String, String>? {
+        val base = Config.url(ctx) ?: return null
+        val cookie = CookieManager.getInstance().getCookie(base)
+        return if (cookie.isNullOrEmpty()) null else base to cookie
+    }
+
+    /** GET returning parsed JSON, or null on any failure (network, login, non-JSON). */
+    internal fun getJson(base: String, path: String, cookie: String, readMs: Int = 20000): JSONObject? = get(base, path, cookie, readMs)?.json
+
     private fun dayStart(t: Long): Long {
         val c = java.util.Calendar.getInstance()
         c.timeInMillis = t
@@ -266,7 +276,10 @@ object CarStatus {
         val state = get(base, "/api/vehicle/state", cookie)
         t1.join(); t2.join(); t3.join(); t4.join()
 
-        if (state == null || state.code == -1) return Result.Offline(state?.err ?: "no response")
+        if (state == null || state.code == -1) {
+            val tsOff = Tailscale.isTailscaleAddress(base) && !Tailscale.isConnected()
+            return Result.Offline(if (tsOff) "Tailscale not connected" else (state?.err ?: "no response"))
+        }
         val j = state.json ?: return Result.SignIn(if (state.code == 200) "got a web page" else "HTTP ${state.code}")
         if (!j.optBoolean("success", false)) return Result.NoData(j.optString("error", "car data unavailable").take(40))
 

@@ -4,8 +4,12 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <queries>
+        <package android:name="com.tailscale.ipn" />
+    </queries>
     <application
-        android:label="SealDrive"
+        android:label="BYDrive"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="false"
@@ -35,12 +39,16 @@
                 android:resource="@xml/file_paths" />
         </provider>
         <service
+            android:name=".MonthlyJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <service
             android:name=".RefreshJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <receiver
             android:name=".SealDriveWidget"
-            android:label="SealDrive"
+            android:label="BYDrive"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -51,7 +59,7 @@
         </receiver>
         <receiver
             android:name=".SealDriveWidgetSmall"
-            android:label="SealDrive strip"
+            android:label="BYDrive strip"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -62,7 +70,7 @@
         </receiver>
         <receiver
             android:name=".SealDriveClimateWidget"
-            android:label="SealDrive climate"
+            android:label="BYDrive climate"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
