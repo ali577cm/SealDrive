@@ -27,6 +27,8 @@ object CarStatus {
         val chargeSessionKwh: Double? = null, // energy added so far this charging session
         val avgCostPence: Double? = null,     // average charging cost per day (time-of-day tariff)
         val sessionCostPence: Double? = null, // cost of the current charging session so far
+        val todayKwh: Double? = null,         // energy used by all of today's trips (since local midnight)
+        val lastChargeCostPence: Double? = null, // cost of the most recent completed charge, by low/high-rate minutes
     )
 
     sealed class Result {
@@ -128,6 +130,33 @@ object CarStatus {
         if (first == 0L) return 0.0
         val days = (Math.round((today - dayStart(first)) / 86_400_000.0).toInt() + 1).coerceAtLeast(1)
         return (histSum + todaySum) / days
+    }
+
+    /** Energy used by every trip that started today (local midnight onwards). */
+    private fun todayKwh(base: String, cookie: String): Double? {
+        val today = dayStart(System.currentTimeMillis())
+        val arr = get(base, "/api/trips?days=2&limit=500&offset=0", cookie, 15000)?.json?.optJSONArray("trips") ?: return null
+        var sum = 0.0
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            if (o.optLong("startTime", 0L) >= today) sum += tripEnergy(o)
+        }
+        return sum
+    }
+
+    /** Cost of the most recent COMPLETED charge: its kWh split across the cheap and standard minutes it actually ran. */
+    private fun lastChargeCost(ctx: Context, base: String, cookie: String): Double? {
+        val arr = fetchSessions(base, cookie, 90, 10, 0) ?: return null     // newest first
+        val t = Config.tariff(ctx)
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            if (o.optBoolean("inProgress", false)) continue
+            val start = o.optLong("startTime", 0L)
+            val end = o.optLong("endTime", 0L)
+            val e = o.optDouble("energyAdded", Double.NaN)
+            if (start > 0 && end > 0 && !e.isNaN() && e > 0) return priceSession(start, end, e, t)
+        }
+        return null
     }
 
     // ---------------- time-of-day pricing of charging sessions ----------------
@@ -270,12 +299,16 @@ object CarStatus {
         var avg: Double? = null
         var statusResp: Resp? = null
         var costs: ChargeCosts? = null
+        var todayUsed: Double? = null
+        var lastCharge: Double? = null
         val t1 = thread { sentryResp = get(base, "/api/surveillance/status", cookie) }
         val t3 = thread { statusResp = get(base, "/status", cookie, 8000) }
         val t4 = thread { costs = try { chargeCosts(ctx, base, cookie) } catch (_: Exception) { null } }
+        val t5 = thread { todayUsed = try { todayKwh(base, cookie) } catch (_: Exception) { null } }
+        val t6 = thread { lastCharge = try { lastChargeCost(ctx, base, cookie) } catch (_: Exception) { null } }
         val t2 = thread { avg = try { averageKwhPerDay(ctx, base, cookie) } catch (_: Exception) { null } }
         val state = get(base, "/api/vehicle/state", cookie)
-        t1.join(); t2.join(); t3.join(); t4.join()
+        t1.join(); t2.join(); t3.join(); t4.join(); t5.join(); t6.join()
 
         if (state == null || state.code == -1) {
             val tsOff = Tailscale.isTailscaleAddress(base) && !Tailscale.isConnected()
@@ -320,6 +353,6 @@ object CarStatus {
             priceSession(costs?.liveStart ?: now, now, liveKwh, tariff) else null
 
         return Result.Ok(Snapshot(soc, range, locked, doorsOpen, if (winKnown) winOpen else null, sentryOn, sentryRec, avg,
-            charging, if (charging) eta else null, liveKwh, costs?.avgPencePerDay, sessionCost))
+            charging, if (charging) eta else null, liveKwh, costs?.avgPencePerDay, sessionCost, todayUsed, lastCharge))
     }
 }

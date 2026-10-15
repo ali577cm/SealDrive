@@ -38,9 +38,9 @@ open class SealDriveWidget : AppWidgetProvider() {
 
         private class Chip(val text: String, val color: String)
 
-        private fun save(c: Context, sub: String, soc: Int, range: String, unlocked: Boolean, chips: List<Chip>, cap: String = "Avg / day", capS: String = "per day", rangeS: String = "") {
+        private fun save(c: Context, sub: String, soc: Int, range: String, unlocked: Boolean, chips: List<Chip>, cap: String = "Avg / day", capS: String = "no charge", rangeS: String = "", stripEnergy: String = "—") {
             val e = prefs(c).edit().putString("sub", sub).putInt("soc", soc).putString("range", range)
-                .putBoolean("unlocked", unlocked).putString("cap", cap).putString("capS", capS).putString("rangeS", rangeS)
+                .putBoolean("unlocked", unlocked).putString("cap", cap).putString("capS", capS).putString("rangeS", rangeS).putString("vS3", stripEnergy)
             chips.forEachIndexed { i, ch -> e.putString("v$i", ch.text).putString("k$i", ch.color) }
             e.apply()
         }
@@ -63,15 +63,15 @@ open class SealDriveWidget : AppWidgetProvider() {
                     else -> R.drawable.widget_bg
                 })
                 setTextViewText(R.id.widget_range, if (compact) p.getString("rangeS", "") else p.getString("range", ""))
-                setTextViewText(R.id.chip_avg_cap, if (compact) p.getString("capS", "per day") else p.getString("cap", "Avg / day"))
+                setTextViewText(R.id.chip_avg_cap, if (compact) p.getString("capS", "no charge") else p.getString("cap", "Avg / day"))
                 if (!compact) {
                     setProgressBar(R.id.widget_bar, 100, soc.coerceAtLeast(0), false)
                 }
                 setImageViewResource(R.id.chip_lock_icon, if (p.getBoolean("unlocked", false)) R.drawable.ic_lock_open else R.drawable.ic_lock)
                 for (i in VAL_IDS.indices) {
                     val color = Color.parseColor(p.getString("k$i", DIM))
-                    setTextViewText(VAL_IDS[i], p.getString("v$i", "—"))
-                    setTextColor(VAL_IDS[i], color)
+                    setTextViewText(VAL_IDS[i], if (compact && i == 3) p.getString("vS3", "—") else p.getString("v$i", "—"))
+                    setTextColor(VAL_IDS[i], if (compact && i == 3) Color.parseColor(PLAIN) else color)
                     setInt(ICON_IDS[i], "setColorFilter", color)
                 }
                 setOnClickPendingIntent(R.id.widget_root, open)
@@ -153,7 +153,9 @@ open class SealDriveWidget : AppWidgetProvider() {
                     val avg = s.avgKwhPerDay?.let { Chip("%.1f kWh".format(it), PLAIN) } ?: Chip("—", DIM)
                     val cost = s.avgCostPence?.let { money(it) }
                     val cap = cost?.let { "Avg $it/day" } ?: "Avg / day"
-                    val capS = cost?.let { "$it/day" } ?: "per day"
+                    // 4x1 strip: kWh used today, and the cost of the previous charge (low/high-rate minutes)
+                    val capS = s.lastChargeCostPence?.let { "Charge ${money(it)}" } ?: "no charge"
+                    val stripEnergy = s.todayKwh?.let { "%.1f kWh".format(it) } ?: "—"
                     val miles = s.rangeKm?.let { "${Math.round(it * 0.621371)} mi" }
                     val charge = if (s.charging) "⚡ " + (eta(s.chargeEtaMin) ?: "Charging") else null
                     val rangeFull = if (charge != null) listOfNotNull(miles, charge).joinToString(" · ") else (miles?.let { "$it range" } ?: "")
@@ -163,7 +165,7 @@ open class SealDriveWidget : AppWidgetProvider() {
                         else "Updated ${time()}"
                     val stripCharge = if (s.charging) "⚡ " + (etaTight(s.chargeEtaMin) ?: "Charging") + (sessCost?.let { " · $it" } ?: "") else null
                     save(ctx, sub, s.soc?.toInt() ?: -1, rangeFull,
-                        s.locked == 2 && s.doorsOpen == 0, listOf(lock, win, sentry, avg), cap, capS, stripCharge ?: (miles ?: ""))
+                        s.locked == 2 && s.doorsOpen == 0, listOf(lock, win, sentry, avg), cap, capS, stripCharge ?: (miles ?: ""), stripEnergy)
                 }
             }
         }
