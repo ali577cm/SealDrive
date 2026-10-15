@@ -16,8 +16,9 @@ import java.util.Locale
 
 /**
  * Monthly summary notification (charging cost, miles driven, kWh used for the previous calendar month).
- * A job runs every ~6 hours; on/after the 1st it sends last month's summary once. If the car can't be reached
- * (phone offline, Tailscale off, car asleep) it simply tries again at the next run.
+ * A job runs every ~3 hours but only acts on the 1st of the month, when it sends last month's summary once. If the car
+ * can't be reached (phone offline, Tailscale off, car asleep) it tries again at the next run that same day.
+ * It never sends on any other day of the month.
  */
 object MonthlyReport {
     private const val CHANNEL = "monthly"
@@ -116,6 +117,7 @@ object MonthlyReport {
      */
     fun checkAndSend(ctx: Context, test: Boolean = false): Boolean {
         if (!test && !Config.monthlyEnabled(ctx)) return true
+        if (!test && Calendar.getInstance().get(Calendar.DAY_OF_MONTH) != 1) return true   // 1st of the month only
         val prev = monthStart(-1)
         val key = monthKey(prev)
         if (!test && prefs(ctx).getString("sent", "") == key) return true      // already sent for that month
@@ -126,18 +128,14 @@ object MonthlyReport {
         return true
     }
 
-    /** Schedules the ~6 hourly check (idempotent) - or cancels it when the feature is switched off. */
+    /** Schedules the ~3 hourly check (idempotent) - or cancels it when the feature is switched off. */
     fun schedule(ctx: Context) {
         val js = ctx.getSystemService(JobScheduler::class.java)
         if (!Config.monthlyEnabled(ctx)) { js.cancel(JOB_ID); return }
-        // first time on: don't send an old month's summary mid-month - wait for the next 1st
-        val p = prefs(ctx)
-        if (p.getString("sent", "").isNullOrEmpty() && Calendar.getInstance().get(Calendar.DAY_OF_MONTH) != 1)
-            p.edit().putString("sent", monthKey(monthStart(-1))).apply()
         if (js.getPendingJob(JOB_ID) != null) return
         js.schedule(JobInfo.Builder(JOB_ID, ComponentName(ctx, MonthlyJobService::class.java))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-            .setPeriodic(6 * 60 * 60 * 1000L)
+            .setPeriodic(3 * 60 * 60 * 1000L)
             .setPersisted(true)
             .build())
     }
