@@ -34,6 +34,7 @@ class StatsActivity : Activity() {
     private var tab = 0
     private var status = ""
     private var rows: List<MonthlyReport.ChargeRow>? = null
+    private var recent7: MonthlyReport.Summary? = null      // the last 7 days, for the month prediction
     private var rowsFailed = false
     @Volatile private var loading = false
     private lateinit var content: LinearLayout
@@ -140,6 +141,10 @@ class StatsActivity : Activity() {
                 if (s == null) { failed = true; break }
                 if (!m.current) store(m, s)
                 results[m.key] = s
+                if (m.current) {
+                    val now = System.currentTimeMillis()
+                    MonthlyReport.compute(this, now - 7 * 86_400_000L, now, live = true)?.let { recent7 = it }
+                }
                 runOnUiThread { render() }
             }
             loading = false
@@ -218,7 +223,7 @@ class StatsActivity : Activity() {
             2 -> renderYear()
             else -> renderCharges()
         }
-        content.addView(text("Costs use your tariff and charger-efficiency settings; they are estimates, not a bill.", 11f, dim).apply { setPadding(0, dp(8), 0, 0) })
+        content.addView(text("Costs use your tariff and charger-efficiency settings and cover charging only (no standing charge). The prediction assumes the rest of the month looks like your recent days; it is an estimate, not a bill.", 11f, dim).apply { setPadding(0, dp(8), 0, 0) })
     }
 
     private fun renderCharges() {
@@ -367,12 +372,22 @@ class StatsActivity : Activity() {
         total(c, label, "1 – $today", s)
         content.addView(c)
         if (s != null) {
-            val cal = Calendar.getInstance()
-            val day = cal.get(Calendar.DAY_OF_MONTH)
-            val inMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+            val now = System.currentTimeMillis()
+            val inMonth = Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_MONTH)
+            val elapsed = ((now - m.from) / 86_400_000.0).coerceAtLeast(0.01)       // days since the 1st, fractional
+            val remaining = (inMonth - elapsed).coerceAtLeast(0.0)
+            val monthPerDay = s.costPence / elapsed
+            val r7 = recent7
+            // after the first few days, the last 7 days predict better than the whole month so far
+            val useRecent = r7 != null && elapsed >= 3.0
+            val perDay = if (useRecent) r7!!.costPence / 7.0 else monthPerDay
+            val predicted = s.costPence + perDay * remaining
             val c2 = cardView()
-            line(c2, "Average per day", money(s.costPence / day) + " · " + mi(s.miles / day))
-            line(c2, "On track for the month", money(s.costPence / day * inMonth))
+            c2.addView(text("Predicted for $label", 13f, dim))
+            c2.addView(text(money(predicted), 36f, accent, true))
+            c2.addView(text("${money(s.costPence)} so far + %.1f days at ${money(perDay)}/day (based on ${if (useRecent) "your last 7 days" else "the month so far"})".format(remaining), 12f, dim).apply { setPadding(0, 0, 0, dp(8)) })
+            line(c2, "Month so far, per day", money(monthPerDay) + " · " + mi(s.miles / elapsed))
+            if (useRecent) line(c2, "Last 7 days, per day", money(r7!!.costPence / 7.0))
             content.addView(c2)
         }
     }
