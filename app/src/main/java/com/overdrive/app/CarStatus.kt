@@ -242,7 +242,7 @@ object CarStatus {
         val today = dayStart(now)
         val p = ctx.getSharedPreferences("charge_cache", Context.MODE_PRIVATE)
         val cacheOk = p.getLong("day", 0L) != 0L && p.getString("sig", "") == t.signature()
-        if (p.getLong("day", 0L) != today || !cacheOk) rebuildCostHistory(ctx, base, cookie, t)
+        // (history cache for the removed daily-average figure is no longer rebuilt)
 
         val recent = fetchSessions(base, cookie, 3, 200, 0) ?: return null
         var recentSum = 0.0
@@ -306,7 +306,7 @@ object CarStatus {
         val t4 = thread { costs = try { chargeCosts(ctx, base, cookie) } catch (_: Exception) { null } }
         val t5 = thread { todayUsed = try { todayKwh(base, cookie) } catch (_: Exception) { null } }
         val t6 = thread { lastCharge = try { lastChargeCost(ctx, base, cookie) } catch (_: Exception) { null } }
-        val t2 = thread { avg = try { averageKwhPerDay(ctx, base, cookie) } catch (_: Exception) { null } }
+        val t2 = thread { }   // all-history daily average is no longer shown, so it is no longer calculated
         val state = get(base, "/api/vehicle/state", cookie)
         t1.join(); t2.join(); t3.join(); t4.join(); t5.join(); t6.join()
 

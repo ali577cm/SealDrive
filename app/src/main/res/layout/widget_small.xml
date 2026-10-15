@@ -191,7 +191,7 @@
             android:layout_height="wrap_content"
             android:includeFontPadding="false"
             android:maxLines="1"
-            android:text="per day"
+            android:text="Charge"
             android:textColor="#6F8AA4"
             android:textSize="9sp" />
     </LinearLayout>

@@ -301,7 +301,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:maxLines="1"
-                        android:text="Avg / day"
+                        android:text="Charge"
                         android:textColor="#6F8AA4"
                         android:textSize="10sp" />
                 </LinearLayout>

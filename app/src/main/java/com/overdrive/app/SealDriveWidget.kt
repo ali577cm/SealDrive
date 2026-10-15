@@ -150,9 +150,9 @@ open class SealDriveWidget : AppWidgetProvider() {
                         s.sentryOn -> Chip("On", GOOD)
                         else -> Chip("Off", WARN)
                     }
-                    val avg = s.avgKwhPerDay?.let { Chip("%.1f kWh".format(it), PLAIN) } ?: Chip("—", DIM)
-                    val cost = s.avgCostPence?.let { money(it) }
-                    val cap = cost?.let { "Avg $it/day" } ?: "Avg / day"
+                    // both widgets: kWh used today, and the cost of the previous charge (low/high-rate minutes)
+                    val avg = s.todayKwh?.let { Chip("%.1f kWh".format(it), PLAIN) } ?: Chip("—", DIM)
+                    val cap = s.lastChargeCostPence?.let { "Charge ${money(it)}" } ?: "no charge"
                     // 4x1 strip: kWh used today, and the cost of the previous charge (low/high-rate minutes)
                     val capS = s.lastChargeCostPence?.let { "Charge ${money(it)}" } ?: "no charge"
                     val stripEnergy = s.todayKwh?.let { "%.1f kWh".format(it) } ?: "—"
