@@ -59,10 +59,21 @@ class SealDriveClimateWidget : AppWidgetProvider() {
         /** Redraws every climate button (e.g. after the temperature or background setting changed). */
         fun redraw(ctx: Context) = push(ctx, false)
 
+        /**
+         * Overdrive reports the AC as off while the car itself is switched off, even when a remote climate run is
+         * going, so a recent "on" command from this widget counts as on until its run time is up.
+         */
+        private fun effectiveAc(ctx: Context, reported: Boolean?): Boolean? {
+            val p = prefs(ctx)
+            val recentOn = p.getBoolean("cmdOn", false) &&
+                System.currentTimeMillis() - p.getLong("cmdAt", 0L) < Config.climateMinutes(ctx) * 60_000L
+            return if (reported == true || recentOn) true else reported
+        }
+
         private fun store(ctx: Context, s: CarState.Snap?) {
             if (s == null) return
             prefs(ctx).edit()
-                .putString("ac", when (s.acOn) { true -> "on"; false -> "off"; null -> "" })
+                .putString("ac", when (effectiveAc(ctx, s.acOn)) { true -> "on"; false -> "off"; null -> "" })
                 .putString("inside", s.insideC?.let { CarState.fmtTemp(it) })
                 .putString("state", "")
                 .apply()
@@ -109,22 +120,20 @@ class SealDriveClimateWidget : AppWidgetProvider() {
         thread {
             try {
                 val before = CarState.read(ctx)
-                val turnOn = before?.acOn != true                       // on -> off; off or unknown -> on
+                val turnOn = effectiveAc(ctx, before?.acOn) != true     // on -> off; off or unknown -> on
                 val r = if (turnOn) CarCommand.startClimate(ctx, Config.climateTemp(ctx).toDouble(), Config.climateMinutes(ctx))
                         else CarCommand.stopClimate(ctx)
                 if (!r.ok) {
                     p.edit().putString("state", "fail").putString("status", r.message).putLong("busyAt", 0L).apply()
                 } else {
-                    // let the car react, then show what it really did
-                    var after: CarState.Snap? = null
-                    for (i in 0 until 3) {
-                        Thread.sleep(1500)
-                        after = CarState.read(ctx)
-                        if (after?.acOn == turnOn) break
+                    // the car accepted it; remember that, then refresh the cabin temperature
+                    p.edit().putBoolean("cmdOn", turnOn).putLong("cmdAt", System.currentTimeMillis())
+                        .putLong("busyAt", 0L).putString("ac", if (turnOn) "on" else "off").putString("state", "").apply()
+                    Thread.sleep(2000)
+                    CarState.read(ctx)?.let { s ->
+                        p.edit().putString("inside", s.insideC?.let { CarState.fmtTemp(it) }).apply()
+                        if (!turnOn && s.acOn == true) p.edit().putString("ac", "on").apply()   // still running: say so
                     }
-                    p.edit().putLong("busyAt", 0L).apply()
-                    if (after?.acOn != null) store(ctx, after)
-                    else p.edit().putString("ac", if (turnOn) "on" else "off").putString("state", "").apply()
                 }
                 p.edit().putLong("busyAt", 0L).apply()
                 push(ctx, false)
