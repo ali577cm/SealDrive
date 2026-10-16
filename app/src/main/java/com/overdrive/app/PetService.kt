@@ -22,6 +22,8 @@ object PetMode {
     const val MIN_SOC = 30.0           // stop and warn at or below this battery %
     const val CLIMATE_MINUTES = 30     // longest remote climate run Overdrive allows
     const val RESEND_AFTER_MS = 15 * 60_000L
+    const val POLL_MS = 30_000L                // how often the car's lock state is checked
+    const val MAINTAIN_MS = 6 * 60_000L        // how often the AC / screen picture are refreshed
 
     private fun prefs(c: Context) = c.getSharedPreferences("pet", Context.MODE_PRIVATE)
 
@@ -36,7 +38,7 @@ object PetMode {
     fun start(ctx: Context) {
         if (isActive(ctx)) return
         edit(ctx).putBoolean("active", true).putBoolean("sawLocked", false).putLong("lastSend", 0L)
-            .putInt("fails", 0).putInt("cpdBefore", -1).putString("cabin", null).putString("note", "Starting…").apply()
+            .putInt("fails", 0).putLong("lastMaintain", 0L).putInt("cpdBefore", -1).putString("cabin", null).putString("note", "Starting…").apply()
         ctx.startForegroundService(Intent(ctx, PetService::class.java).setAction(PetService.ACTION_START))
         SealDriveCpdWidget.redraw(ctx)
     }
@@ -67,6 +69,8 @@ class PetService : Service() {
     }
 
     private val busy = AtomicBoolean(false)
+    private val looping = AtomicBoolean(false)
+    private var lock: PowerManager.WakeLock? = null
 
     override fun onBind(i: Intent?): IBinder? = null
 
@@ -79,8 +83,30 @@ class PetService : Service() {
             thread { finish("Pet mode off", stopAc = true, warn = false) }
             return START_NOT_STICKY
         }
-        thread { tick() }
+        startLoop()
         return START_STICKY
+    }
+
+    /** Checks the car every 30 s until pet mode ends. Holds a CPU wake lock so checks continue with the screen off. */
+    private fun startLoop() {
+        if (!looping.compareAndSet(false, true)) { thread { tick() }; return }
+        if (lock == null) lock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bydrive:pet").apply { acquire(12 * 3600_000L) }
+        thread {
+            try {
+                while (PetMode.isActive(this)) {
+                    tick()
+                    try { Thread.sleep(PetMode.POLL_MS) } catch (_: InterruptedException) { break }
+                }
+            } finally {
+                looping.set(false)
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        lock?.let { if (it.isHeld) it.release() }
+        super.onDestroy()
     }
 
     private fun nm() = getSystemService(NotificationManager::class.java)
@@ -122,11 +148,9 @@ class PetService : Service() {
             .build())
     }
 
-    /** One check: stop conditions first, then make sure the AC is running. */
+    /** One check: stop conditions every time; the AC and screen picture only every few minutes. */
     private fun tick() {
         if (!busy.compareAndSet(false, true)) return
-        val wl = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bydrive:pet")
-        wl.acquire(90_000L)
         try {
             if (!PetMode.isActive(this)) return
             val p = PetMode.p(this)
@@ -134,7 +158,7 @@ class PetService : Service() {
             if (s == null) {
                 val fails = p.getInt("fails", 0) + 1
                 PetMode.edit(this).putInt("fails", fails).putString("note", "can't reach car").apply()
-                if (fails == 2 || fails == 5)
+                if (fails == 20 || (fails > 20 && (fails - 20) % 40 == 0))        // ~10 min, then every ~20 min
                     alert("Pet mode: can't reach the car",
                         "BYDrive has not been able to talk to the car for a while. Check Tailscale and your signal - the AC may stop soon.")
                 update(); scheduleNext(); return
@@ -142,44 +166,51 @@ class PetService : Service() {
             PetMode.edit(this).putInt("fails", 0).putString("cabin", s.insideC?.let { CarState.fmtTemp(it) }).apply()
 
             if (s.locked == 1) PetMode.edit(this).putBoolean("sawLocked", true).apply()
-            if (s.locked == 2 && p.getBoolean("sawLocked", false)) {
+            val sawLocked = p.getBoolean("sawLocked", false)
+            // you are back: the car was locked and is now unlocked (or a door has been opened)
+            if (sawLocked && (s.locked == 2 || s.doorsOpen > 0)) {
                 finish("Pet mode ended - car unlocked", stopAc = false, warn = false); return
             }
             if (s.soc != null && s.soc <= PetMode.MIN_SOC) {
                 finish("Pet mode stopped - battery ${s.soc.toInt()}%", stopAc = true, warn = true); return
             }
 
-            // Child Presence Detection would raise the alarm with the pet inside - keep it off, remember what it was
-            if (s.cpdOn == true) {
-                if (p.getInt("cpdBefore", -1) == -1) PetMode.edit(this).putInt("cpdBefore", 1).apply()
-                CarCommand.setChildPresenceDetection(this, 2)
-            } else if (s.cpdOn == false && p.getInt("cpdBefore", -1) == -1) {
-                PetMode.edit(this).putInt("cpdBefore", 0).apply()
-            }
-
             val now = System.currentTimeMillis()
-            if (s.acOn != true || now - p.getLong("lastSend", 0L) >= PetMode.RESEND_AFTER_MS) {
-                val r = CarCommand.startClimate(this, PetMode.TEMP_C, PetMode.CLIMATE_MINUTES)
-                if (r.ok) PetMode.edit(this).putLong("lastSend", now).putString("note", "AC on").apply()
-                else {
-                    PetMode.edit(this).putString("note", "AC failed: ${r.message}").apply()
-                    if (s.acOn != true) alert("Pet mode: AC did not start", "The car refused the climate command (${r.message}). Check on your pet.")
+            if (now - p.getLong("lastMaintain", 0L) >= PetMode.MAINTAIN_MS) {
+                PetMode.edit(this).putLong("lastMaintain", now).apply()
+                // Child Presence Detection would raise the alarm with the pet inside - keep it off, remember what it was
+                if (s.cpdOn == true) {
+                    if (p.getInt("cpdBefore", -1) == -1) PetMode.edit(this).putInt("cpdBefore", 1).apply()
+                    CarCommand.setChildPresenceDetection(this, 2)
+                } else if (s.cpdOn == false && p.getInt("cpdBefore", -1) == -1) {
+                    PetMode.edit(this).putInt("cpdBefore", 0).apply()
                 }
-            } else PetMode.edit(this).putString("note", "AC on").apply()
-            CarCommand.setScreenBrightness(this, 100)  // full brightness so the sign is easy to see
-            CarCommand.showScreenImage(this)          // flash the "dog inside" picture on the car screen (best effort)
+
+                if (s.acOn != true || now - p.getLong("lastSend", 0L) >= PetMode.RESEND_AFTER_MS) {
+                    val r = CarCommand.startClimate(this, PetMode.TEMP_C, PetMode.CLIMATE_MINUTES)
+                    if (r.ok) PetMode.edit(this).putLong("lastSend", now).putString("note", "AC on").apply()
+                    else {
+                        PetMode.edit(this).putString("note", "AC failed: ${r.message}").apply()
+                        if (s.acOn != true) alert("Pet mode: AC did not start", "The car refused the climate command (${r.message}). Check on your pet.")
+                    }
+                }
+                // show the sign, then raise the brightness (waking the panel can reset it)
+                CarCommand.showScreenImage(this)
+                Thread.sleep(2500)
+                val b = CarCommand.setScreenBrightness(this, 100)
+                PetMode.edit(this).putString("screen", if (b.ok) "brightness set" else "brightness: ${b.message}").apply()
+            }
             update(); scheduleNext()
         } catch (_: Exception) {
             scheduleNext()
         } finally {
             busy.set(false)
-            if (wl.isHeld) wl.release()
         }
     }
 
     private fun update() {
         val c = PetMode.cabin(this)
-        goForeground(if (c != null) "cabin $c" else PetMode.note(this))
+        goForeground((if (c != null) "cabin $c" else PetMode.note(this)) + (PetMode.p(this).getString("screen", null)?.let { " · $it" } ?: ""))
         SealDriveCpdWidget.redraw(this)
     }
 
@@ -190,6 +221,7 @@ class PetService : Service() {
         getSystemService(AlarmManager::class.java).cancel(
             PendingIntent.getService(this, 8, Intent(this, PetService::class.java).setAction(ACTION_TICK),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+        lock?.let { if (it.isHeld) it.release() }
         var failedOff = false
         if (stopAc) failedOff = !CarCommand.stopClimate(this).ok
         if (cpdBefore == 1) CarCommand.setChildPresenceDetection(this, 1)     // put Child Presence Detection back

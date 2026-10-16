@@ -11,6 +11,7 @@ object CarState {
         val locked: Int,           // 1 locked, 2 unlocked, other unknown
         val soc: Double?,          // battery %
         val cpdOn: Boolean?,       // Child Presence Detection
+        val doorsOpen: Int = 0,    // number of open doors
     )
 
     /** Returns null when the car/Overdrive cannot be reached or the login is missing. Blocking. */
@@ -26,6 +27,7 @@ object CarState {
             locked = j.optJSONObject("doors")?.optInt("overall", -1) ?: -1,
             soc = j.optJSONObject("battery")?.optDouble("soc", Double.NaN)?.takeIf { !it.isNaN() },
             cpdOn = setting?.let { if (it.has("childPresenceDetection")) it.optBoolean("childPresenceDetection") else null },
+            doorsOpen = j.optJSONObject("doorOpen")?.let { o -> o.keys().asSequence().count { k -> k != "fuelCap" && k != "trunk" && o.optBoolean(k, false) } } ?: 0,
         )
     }
 
