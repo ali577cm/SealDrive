@@ -166,6 +166,7 @@ class PetService : Service() {
                     if (s.acOn != true) alert("Pet mode: AC did not start", "The car refused the climate command (${r.message}). Check on your pet.")
                 }
             } else PetMode.edit(this).putString("note", "AC on").apply()
+            CarCommand.showScreenImage(this)          // flash the "dog inside" picture on the car screen (best effort)
             update(); scheduleNext()
         } catch (_: Exception) {
             scheduleNext()

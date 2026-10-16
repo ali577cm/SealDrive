@@ -72,4 +72,10 @@ object CarCommand {
         val r = post(ctx, "/api/vehicle/climate", JSONObject().put("action", "power_off"))
         return if (r.ok) Outcome(true, "Off") else r
     }
+
+    /**
+     * Shows the picture currently set in Overdrive's Screen Deterrent on the car's screen for its configured
+     * duration (the same as the "test" button there). Used by pet mode; best effort.
+     */
+    fun showScreenImage(ctx: Context): Outcome = post(ctx, "/api/surveillance/screen-deterrent/test", JSONObject())
 }
