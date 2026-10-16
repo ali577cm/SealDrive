@@ -89,7 +89,14 @@ open class SealDriveWidget : AppWidgetProvider() {
 
         private const val JOB_ID = 4201
 
+        /** True when any BYDrive widget (including the climate and pet buttons) is on the home screen. */
         fun hasWidgets(ctx: Context): Boolean {
+            val mgr = AppWidgetManager.getInstance(ctx)
+            return hasMainWidgets(ctx) ||
+                mgr.getAppWidgetIds(ComponentName(ctx, SealDriveClimateWidget::class.java)).isNotEmpty()
+        }
+
+        fun hasMainWidgets(ctx: Context): Boolean {
             val mgr = AppWidgetManager.getInstance(ctx)
             return mgr.getAppWidgetIds(ComponentName(ctx, SealDriveWidget::class.java)).isNotEmpty() ||
                 mgr.getAppWidgetIds(ComponentName(ctx, SealDriveWidgetSmall::class.java)).isNotEmpty()

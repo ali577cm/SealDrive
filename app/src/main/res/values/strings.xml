@@ -3,8 +3,8 @@
     <string name="widget_refresh">Check connection</string>
     <string name="shortcut_settings">Settings &amp; updates</string>
     <string name="widget_small_desc">Compact strip: charge, locks, windows, sentry and energy use</string>
-    <string name="widget_climate_desc">Tap to turn on the car climate at your set temperature</string>
+    <string name="widget_climate_desc">Live cabin temperature; tap to switch the car AC on or off</string>
     <string name="shortcut_monthly">Send monthly summary now</string>
     <string name="shortcut_stats">Usage &amp; costs</string>
-    <string name="widget_cpd_desc">Tap to turn off Child Presence Detection</string>
+    <string name="widget_pet_desc">Pet mode: keeps the car at 20 degrees until you unlock it</string>
 </resources>

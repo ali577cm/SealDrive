@@ -9,7 +9,8 @@ class RefreshJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         thread {
             try {
-                if (SealDriveWidget.hasWidgets(this)) SealDriveWidget.refreshNow(this)
+                if (SealDriveWidget.hasMainWidgets(this)) SealDriveWidget.refreshNow(this)
+                SealDriveClimateWidget.refresh(this)
             } finally {
                 jobFinished(params, false)
             }

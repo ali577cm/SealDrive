@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:description="@string/widget_cpd_desc"
-    android:initialLayout="@layout/widget_cpd"
-    android:previewLayout="@layout/widget_cpd"
+    android:description="@string/widget_pet_desc"
+    android:initialLayout="@layout/widget_pet"
+    android:previewLayout="@layout/widget_pet"
     android:minWidth="40dp"
     android:minHeight="40dp"
     android:targetCellWidth="1"

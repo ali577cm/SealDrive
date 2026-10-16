@@ -257,7 +257,7 @@ class MainActivity : Activity() {
                     failed = false
                     failCount = 0
                     web.loadUrl(saved)
-                    if (SealDriveWidget.hasWidgets(this)) thread { SealDriveWidget.refreshNow(this) }
+                    if (SealDriveWidget.hasMainWidgets(this)) thread { SealDriveWidget.refreshNow(this) }
                 }
             }
         if (url != null) d.setNegativeButton("Cancel", null)
