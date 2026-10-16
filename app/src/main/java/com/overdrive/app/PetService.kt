@@ -43,7 +43,7 @@ object PetMode {
         SealDriveCpdWidget.redraw(ctx)
     }
 
-    /** User-requested stop: also switches the AC off. */
+    /** User-requested stop: leaves the AC running (it ends by itself within 30 minutes). */
     fun stop(ctx: Context) {
         if (!isActive(ctx)) return
         ctx.startForegroundService(Intent(ctx, PetService::class.java).setAction(PetService.ACTION_STOP))
@@ -80,7 +80,7 @@ class PetService : Service() {
         val a = intent?.action
         if (!PetMode.isActive(this) && a != ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
         if (a == ACTION_STOP) {
-            thread { finish("Pet mode off", stopAc = true, warn = false) }
+            thread { finish("Pet mode off", stopAc = false, warn = false) }
             return START_NOT_STICKY
         }
         startLoop()
