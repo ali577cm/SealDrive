@@ -22,7 +22,7 @@ object PetMode {
     const val MIN_SOC = 30.0           // stop and warn at or below this battery %
     const val CLIMATE_MINUTES = 30     // longest remote climate run Overdrive allows
     const val RESEND_AFTER_MS = 15 * 60_000L
-    const val POLL_MS = 30_000L                // how often the car's lock state is checked
+    const val STEP_MS = 5_000L                 // the picture is re-shown every step; lock/AC checks every 6th step (30 s)
     const val MAINTAIN_MS = 6 * 60_000L        // how often the AC / screen picture are refreshed
 
     private fun prefs(c: Context) = c.getSharedPreferences("pet", Context.MODE_PRIVATE)
@@ -94,9 +94,12 @@ class PetService : Service() {
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bydrive:pet").apply { acquire(12 * 3600_000L) }
         thread {
             try {
+                var n = 0
                 while (PetMode.isActive(this)) {
-                    tick()
-                    try { Thread.sleep(PetMode.POLL_MS) } catch (_: InterruptedException) { break }
+                    // Overdrive shows the picture for at most 30 s per request, so ask again every few seconds to keep it up
+                    CarCommand.showScreenImage(this)
+                    if (n++ % 6 == 0) tick()
+                    try { Thread.sleep(PetMode.STEP_MS) } catch (_: InterruptedException) { break }
                 }
             } finally {
                 looping.set(false)
@@ -194,8 +197,7 @@ class PetService : Service() {
                         if (s.acOn != true) alert("Pet mode: AC did not start", "The car refused the climate command (${r.message}). Check on your pet.")
                     }
                 }
-                // show the sign, then raise the brightness (waking the panel can reset it)
-                CarCommand.showScreenImage(this)
+                // raise the brightness once the picture is up (waking the panel can reset it)
                 Thread.sleep(2500)
                 val b = CarCommand.setScreenBrightness(this, 100)
                 PetMode.edit(this).putString("screen", if (b.ok) "brightness set" else "brightness: ${b.message}").apply()
