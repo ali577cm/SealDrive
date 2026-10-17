@@ -18,13 +18,24 @@ object CarCommand {
 
     /** POSTs [body] as JSON to [path] on the configured Overdrive address and reports whether the car accepted it. */
     private fun post(ctx: Context, path: String, body: JSONObject): Outcome {
+        // a sleeping car can take a while to wake its head unit and Tailscale, so try a few times before saying "Offline"
+        var last = Outcome(false, "Offline")
+        for (attempt in 0 until 3) {
+            last = postOnce(ctx, path, body)
+            if (last.message != "Offline") return last
+            if (attempt < 2) try { Thread.sleep(6000) } catch (_: InterruptedException) { return last }
+        }
+        return last
+    }
+
+    private fun postOnce(ctx: Context, path: String, body: JSONObject): Outcome {
         val base = Config.url(ctx) ?: return Outcome(false, "Set address in app")
         val cookie = CookieManager.getInstance().getCookie(base)
         if (cookie.isNullOrEmpty()) return Outcome(false, "Sign in via app")
         return try {
             val c = URL(base.trimEnd('/') + path).openConnection() as HttpURLConnection
             c.instanceFollowRedirects = false
-            c.connectTimeout = 4000
+            c.connectTimeout = 8000
             c.readTimeout = 10000
             c.requestMethod = "POST"
             c.doOutput = true
