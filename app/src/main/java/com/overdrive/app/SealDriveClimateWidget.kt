@@ -113,33 +113,38 @@ class SealDriveClimateWidget : AppWidgetProvider() {
     private fun toggle(ctx: Context) {
         val p = prefs(ctx)
         val now = System.currentTimeMillis()
-        if (now - p.getLong("busyAt", 0L) < 10_000L) return           // ignore taps while a command is in flight
+        if (now - p.getLong("busyAt", 0L) < 60_000L) return           // ignore taps while a command is in flight
         p.edit().putLong("busyAt", now).apply()
-        val pending = goAsync()
         push(ctx, true)
-        thread {
-            try {
-                val before = CarState.read(ctx)
-                val turnOn = effectiveAc(ctx, before?.acOn) != true     // on -> off; off or unknown -> on
-                val r = if (turnOn) CarCommand.startClimate(ctx, Config.climateTemp(ctx).toDouble(), Config.climateMinutes(ctx))
-                        else CarCommand.stopClimate(ctx)
-                if (!r.ok) {
-                    p.edit().putString("state", "fail").putString("status", r.message).putLong("busyAt", 0L).apply()
-                } else {
-                    // the car accepted it; remember that, then refresh the cabin temperature
-                    p.edit().putBoolean("cmdOn", turnOn).putLong("cmdAt", System.currentTimeMillis()).putString("via", r.path)
-                        .putLong("busyAt", 0L).putString("ac", if (turnOn) "on" else "off").putString("state", "").apply()
-                    Thread.sleep(2000)
-                    CarState.read(ctx)?.let { s ->
-                        p.edit().putString("inside", s.insideC?.let { CarState.fmtTemp(it) }).apply()
-                        if (!turnOn && s.acOn == true) p.edit().putString("ac", "on").apply()   // still running: say so
-                    }
+        // the command can take ~30 s if the car is waking up, longer than a broadcast receiver may run
+        ctx.startForegroundService(Intent(ctx, ClimateCommandService::class.java))
+    }
+
+    /** Sends the on/off command and updates the widget. Blocking: called from [ClimateCommandService]. */
+    fun runToggle(ctx: Context) {
+        val p = prefs(ctx)
+        try {
+            val before = CarState.read(ctx)
+            val turnOn = effectiveAc(ctx, before?.acOn) != true     // on -> off; off or unknown -> on
+            val r = if (turnOn) CarCommand.startClimate(ctx, Config.climateTemp(ctx).toDouble(), Config.climateMinutes(ctx))
+                    else CarCommand.stopClimate(ctx)
+            if (!r.ok) {
+                p.edit().putString("state", "fail").putString("status", r.message).apply()
+            } else {
+                // the car accepted it; remember that, then refresh the cabin temperature
+                p.edit().putBoolean("cmdOn", turnOn).putLong("cmdAt", System.currentTimeMillis()).putString("via", r.path)
+                    .putString("ac", if (turnOn) "on" else "off").putString("state", "").apply()
+                Thread.sleep(2000)
+                CarState.read(ctx)?.let { s ->
+                    p.edit().putString("inside", s.insideC?.let { CarState.fmtTemp(it) }).apply()
+                    if (!turnOn && s.acOn == true) p.edit().putString("ac", "on").apply()   // still running: say so
                 }
-                p.edit().putLong("busyAt", 0L).apply()
-                push(ctx, false)
-            } finally {
-                pending.finish()
             }
+        } catch (_: Exception) {
+            p.edit().putString("state", "fail").putString("status", "Error").apply()
+        } finally {
+            p.edit().putLong("busyAt", 0L).apply()
+            push(ctx, false)
         }
     }
 }

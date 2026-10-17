@@ -62,6 +62,10 @@
                 android:value="Keeps the car cooled for a pet by re-sending the climate command until the user unlocks the car" />
         </service>
         <service
+            android:name=".ClimateCommandService"
+            android:exported="false"
+            android:foregroundServiceType="shortService" />
+        <service
             android:name=".RefreshJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
