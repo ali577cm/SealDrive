@@ -33,7 +33,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           set -o pipefail
-          gradle :app:assembleRelease -PappVersionCode=$((GITHUB_RUN_NUMBER + 100)) 2>&1 | tee build.log || {
+          gradle :app:assembleRelease :pet:assembleRelease -PappVersionCode=$((GITHUB_RUN_NUMBER + 100)) 2>&1 | tee build.log || {
             # surface compiler/Gradle errors as annotations so they are visible without downloading logs
             grep -E "^e: |^w: .*error|What went wrong|Execution failed|error:|Caused by" -A2 build.log | head -40 | sed 's/^/::error::/'
             exit 1
@@ -47,7 +47,8 @@ jobs:
         run: |
           cp app/build/outputs/apk/release/app-release.apk BYDrive.apk
           cp BYDrive.apk SealDrive.apk   # old installs still look for this file name
+          cp pet/build/outputs/apk/release/pet-release.apk BYDrivePet.apk
           CODE=$((GITHUB_RUN_NUMBER + 100))
-          gh release create "v$CODE" BYDrive.apk SealDrive.apk --title "Build $CODE" --generate-notes
+          gh release create "v$CODE" BYDrive.apk SealDrive.apk BYDrivePet.apk --title "Build $CODE" --generate-notes
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         with: { name: BYDrive-apk, path: BYDrive.apk, retention-days: 7 }
