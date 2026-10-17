@@ -35,6 +35,7 @@ object PetMode {
     /** Starts pet mode (or does nothing if already running). */
     fun start(ctx: Context) {
         if (isActive(ctx)) return
+        CarLog.append(ctx, "PET MODE started")
         edit(ctx).putBoolean("active", true).putBoolean("sawLocked", false).putLong("lastSend", 0L)
             .putInt("fails", 0).putLong("lastMaintain", 0L).putInt("cpdBefore", -1).putString("cabin", null).putString("note", "Starting…").apply()
         ctx.startForegroundService(Intent(ctx, PetService::class.java).setAction(PetService.ACTION_START))
@@ -156,6 +157,7 @@ class PetService : Service() {
             if (!PetMode.isActive(this)) return
             val p = PetMode.p(this)
             val s = CarState.read(this)
+            CarLog.append(this, "PET check: " + (if (s == null) "no answer" else "locked=${s.locked} ac=${s.acOn} cabin=${s.insideC} soc=${s.soc} doorsOpen=${s.doorsOpen}"))
             if (s == null) {
                 val fails = p.getInt("fails", 0) + 1
                 PetMode.edit(this).putInt("fails", fails).putString("note", "can't reach car").apply()
@@ -220,6 +222,7 @@ class PetService : Service() {
     }
 
     private fun finish(reason: String, stopAc: Boolean, warn: Boolean) {
+        CarLog.append(this, "PET MODE ended: $reason (ac off=$stopAc)")
         val p = PetMode.p(this)
         val cpdBefore = p.getInt("cpdBefore", -1)
         PetMode.edit(this).putBoolean("active", false).putString("note", reason).apply()

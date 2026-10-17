@@ -37,6 +37,10 @@
             android:exported="false"
             android:theme="@style/Theme.App" />
         <activity
+            android:name=".CarLogActivity"
+            android:exported="false"
+            android:theme="@style/Theme.App" />
+        <activity
             android:name=".PetSettingsActivity"
             android:exported="false"
             android:theme="@style/Theme.App" />
@@ -60,6 +64,14 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps the car cooled for a pet by re-sending the climate command until the user unlocks the car" />
+        </service>
+        <service
+            android:name=".CarLogService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Records car state changes reported by the user's own Overdrive server to a local log for troubleshooting" />
         </service>
         <service
             android:name=".ClimateCommandService"

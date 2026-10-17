@@ -232,6 +232,10 @@ class MainActivity : Activity() {
             addView(monthlyBox)
             addView(bgSpinner)
             addView(Button(this@MainActivity).apply {
+                text = "Car log…"
+                setOnClickListener { startActivity(Intent(this@MainActivity, CarLogActivity::class.java)) }
+            })
+            addView(Button(this@MainActivity).apply {
                 text = "Pet mode settings…"
                 setOnClickListener { startActivity(Intent(this@MainActivity, PetSettingsActivity::class.java)) }
             })

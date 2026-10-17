@@ -22,9 +22,11 @@ object CarCommand {
         var last = Outcome(false, "Offline")
         for (attempt in 0 until 3) {
             last = postOnce(ctx, path, body)
-            if (last.message != "Offline") return last
+            if (last.message != "Offline") break
             if (attempt < 2) try { Thread.sleep(6000) } catch (_: InterruptedException) { return last }
         }
+        CarLog.append(ctx, "COMMAND $path ${body.optString("action", body.optString("target"))} -> " +
+            (if (last.ok) "accepted" else "FAILED") + " (${last.message})" + (if (last.path.isNotEmpty()) " route=${last.path}" else ""))
         return last
     }
 
