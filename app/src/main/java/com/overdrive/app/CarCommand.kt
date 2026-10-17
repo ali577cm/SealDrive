@@ -14,7 +14,7 @@ import java.net.URL
  */
 object CarCommand {
 
-    class Outcome(val ok: Boolean, val message: String)
+    class Outcome(val ok: Boolean, val message: String, val path: String = "")   // path: how Overdrive sent it ("cloud" or "sdk" = local)
 
     /** POSTs [body] as JSON to [path] on the configured Overdrive address and reports whether the car accepted it. */
     private fun post(ctx: Context, path: String, body: JSONObject): Outcome {
@@ -37,7 +37,7 @@ object CarCommand {
             c.disconnect()
             if (code != 200) return Outcome(false, if (code == 401 || code == 403 || code in 300..399) "Sign in via app" else "HTTP $code")
             val j = try { JSONObject(text) } catch (_: Exception) { return Outcome(false, "Sign in via app") }
-            if (j.optBoolean("success", false)) Outcome(true, "Sent")
+            if (j.optBoolean("success", false)) Outcome(true, "Sent", j.optString("path", ""))
             else Outcome(false, j.optString("error", j.optString("reason", "Failed")).ifEmpty { "Failed" }.take(40))
         } catch (e: IOException) {
             Outcome(false, "Offline")
@@ -64,13 +64,13 @@ object CarCommand {
     fun startClimate(ctx: Context, tempC: Double, minutes: Int): Outcome {
         val r = post(ctx, "/api/vehicle/climate",
             JSONObject().put("action", "power_on").put("temp", tempC).put("remoteDurationMinutes", minutes))
-        return if (r.ok) Outcome(true, "On") else r
+        return if (r.ok) Outcome(true, "On", r.path) else r
     }
 
     /** Turns the climate OFF. */
     fun stopClimate(ctx: Context): Outcome {
         val r = post(ctx, "/api/vehicle/climate", JSONObject().put("action", "power_off"))
-        return if (r.ok) Outcome(true, "Off") else r
+        return if (r.ok) Outcome(true, "Off", r.path) else r
     }
 
     /**

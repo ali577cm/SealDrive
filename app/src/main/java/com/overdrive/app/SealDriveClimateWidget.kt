@@ -30,7 +30,7 @@ class SealDriveClimateWidget : AppWidgetProvider() {
             val (text, color) = when {
                 busy -> "Sending…" to "#9FB3C8"
                 p.getString("state", "") == "fail" -> (p.getString("status", "") ?: "") to "#FF8A8A"
-                ac == "on" -> "AC ON · ${fmt(Config.climateTemp(ctx))}" to "#2BD4A7"
+                ac == "on" -> "AC ON · ${fmt(Config.climateTemp(ctx))}${p.getString("via", "")?.let { if (it.isEmpty()) "" else " ($it)" }}" to "#2BD4A7"
                 ac == "off" -> "AC OFF" to "#8FA6BD"
                 else -> "Tap to switch" to "#8FA6BD"
             }
@@ -127,7 +127,7 @@ class SealDriveClimateWidget : AppWidgetProvider() {
                     p.edit().putString("state", "fail").putString("status", r.message).putLong("busyAt", 0L).apply()
                 } else {
                     // the car accepted it; remember that, then refresh the cabin temperature
-                    p.edit().putBoolean("cmdOn", turnOn).putLong("cmdAt", System.currentTimeMillis())
+                    p.edit().putBoolean("cmdOn", turnOn).putLong("cmdAt", System.currentTimeMillis()).putString("via", r.path)
                         .putLong("busyAt", 0L).putString("ac", if (turnOn) "on" else "off").putString("state", "").apply()
                     Thread.sleep(2000)
                     CarState.read(ctx)?.let { s ->

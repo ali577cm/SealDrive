@@ -191,7 +191,7 @@ class PetService : Service() {
 
                 if (s.acOn != true || now - p.getLong("lastSend", 0L) >= PetMode.RESEND_AFTER_MS) {
                     val r = CarCommand.startClimate(this, Config.petTemp(this).toDouble(), PetMode.CLIMATE_MINUTES)
-                    if (r.ok) PetMode.edit(this).putLong("lastSend", now).putString("note", "AC on").apply()
+                    if (r.ok) PetMode.edit(this).putLong("lastSend", now).putString("note", "AC on" + (if (r.path.isNotEmpty()) " (${r.path})" else "")).apply()
                     else {
                         PetMode.edit(this).putString("note", "AC failed: ${r.message}").apply()
                         if (s.acOn != true) alert("Pet mode: AC did not start", "The car refused the climate command (${r.message}). Check on your pet.")
