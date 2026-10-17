@@ -18,8 +18,6 @@ import kotlin.concurrent.thread
 
 /** Shared pet-mode settings and on/off state (used by the service and the widget). */
 object PetMode {
-    const val TEMP_C = 20.0            // cabin set point
-    const val MIN_SOC = 30.0           // stop and warn at or below this battery %
     const val CLIMATE_MINUTES = 30     // longest remote climate run Overdrive allows
     const val RESEND_AFTER_MS = 15 * 60_000L
     const val STEP_MS = 5_000L                 // the picture is re-shown every step; lock/AC checks every 6th step (30 s)
@@ -97,7 +95,7 @@ class PetService : Service() {
                 var n = 0
                 while (PetMode.isActive(this)) {
                     // Overdrive shows the picture for at most 30 s per request, so ask again every few seconds to keep it up
-                    CarCommand.showScreenImage(this)
+                    if (Config.petPicture(this)) CarCommand.showScreenImage(this)
                     if (n++ % 6 == 0) tick()
                     try { Thread.sleep(PetMode.STEP_MS) } catch (_: InterruptedException) { break }
                 }
@@ -121,7 +119,7 @@ class PetService : Service() {
         val n = Notification.Builder(this, CH_RUN)
             .setSmallIcon(R.drawable.ic_pet)
             .setContentTitle("Pet mode ON · $text")
-            .setContentText("Keeping the car at ${PetMode.TEMP_C.toInt()}° until you unlock it")
+            .setContentText("Keeping the car at ${Config.petTemp(this).let { if (it % 1f == 0f) it.toInt().toString() else it.toString() }}° until you unlock it")
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .addAction(Notification.Action.Builder(0, "Turn off", stop).build())
@@ -174,7 +172,7 @@ class PetService : Service() {
             if (sawLocked && (s.locked == 2 || s.doorsOpen > 0)) {
                 finish("Pet mode ended - car unlocked", stopAc = false, warn = false); return
             }
-            if (s.soc != null && s.soc <= PetMode.MIN_SOC) {
+            if (s.soc != null && s.soc <= Config.petMinSoc(this)) {
                 finish("Pet mode stopped - battery ${s.soc.toInt()}%", stopAc = true, warn = true); return
             }
 
@@ -182,7 +180,9 @@ class PetService : Service() {
             if (now - p.getLong("lastMaintain", 0L) >= PetMode.MAINTAIN_MS) {
                 PetMode.edit(this).putLong("lastMaintain", now).apply()
                 // Child Presence Detection would raise the alarm with the pet inside - keep it off, remember what it was
-                if (s.cpdOn == true) {
+                if (!Config.petCpdOff(this)) {
+                    // left alone
+                } else if (s.cpdOn == true) {
                     if (p.getInt("cpdBefore", -1) == -1) PetMode.edit(this).putInt("cpdBefore", 1).apply()
                     CarCommand.setChildPresenceDetection(this, 2)
                 } else if (s.cpdOn == false && p.getInt("cpdBefore", -1) == -1) {
@@ -190,7 +190,7 @@ class PetService : Service() {
                 }
 
                 if (s.acOn != true || now - p.getLong("lastSend", 0L) >= PetMode.RESEND_AFTER_MS) {
-                    val r = CarCommand.startClimate(this, PetMode.TEMP_C, PetMode.CLIMATE_MINUTES)
+                    val r = CarCommand.startClimate(this, Config.petTemp(this).toDouble(), PetMode.CLIMATE_MINUTES)
                     if (r.ok) PetMode.edit(this).putLong("lastSend", now).putString("note", "AC on").apply()
                     else {
                         PetMode.edit(this).putString("note", "AC failed: ${r.message}").apply()
@@ -198,9 +198,12 @@ class PetService : Service() {
                     }
                 }
                 // raise the brightness once the picture is up (waking the panel can reset it)
-                Thread.sleep(2500)
-                val b = CarCommand.setScreenBrightness(this, 100)
-                PetMode.edit(this).putString("screen", if (b.ok) "brightness set" else "brightness: ${b.message}").apply()
+                if (Config.petPicture(this) && Config.petBrightness(this) > 0) Thread.sleep(2500)
+                val level = Config.petBrightness(this)
+                if (Config.petPicture(this) && level > 0) {
+                    val b = CarCommand.setScreenBrightness(this, level)
+                    PetMode.edit(this).putString("screen", if (b.ok) "brightness set" else "brightness: ${b.message}").apply()
+                }
             }
             update(); scheduleNext()
         } catch (_: Exception) {

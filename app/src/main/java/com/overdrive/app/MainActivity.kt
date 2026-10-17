@@ -14,6 +14,7 @@ import android.view.Gravity
 import android.widget.ArrayAdapter
 import android.widget.FrameLayout
 import android.widget.ImageButton
+import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.Spinner
@@ -150,6 +151,7 @@ class MainActivity : Activity() {
     private fun handleIntent(i: Intent?) {
         if (i?.action == "com.overdrive.app.SETTINGS") askAddress()
         if (i?.action == "com.overdrive.app.STATS") startActivity(Intent(this, StatsActivity::class.java))
+        if (i?.action == "com.overdrive.app.PET_SETTINGS") startActivity(Intent(this, PetSettingsActivity::class.java))
         if (i?.action == "com.overdrive.app.MONTHLY_TEST" && System.currentTimeMillis() - lastMonthlyTest > 60_000L) {
             lastMonthlyTest = System.currentTimeMillis()     // this activity is launchable by other apps, so rate-limit the test
             askNotificationPermission()
@@ -229,6 +231,10 @@ class MainActivity : Activity() {
             addView(minInput)
             addView(monthlyBox)
             addView(bgSpinner)
+            addView(Button(this@MainActivity).apply {
+                text = "Pet mode settings…"
+                setOnClickListener { startActivity(Intent(this@MainActivity, PetSettingsActivity::class.java)) }
+            })
         }
         val d = AlertDialog.Builder(this)
             .setTitle("Overdrive address")

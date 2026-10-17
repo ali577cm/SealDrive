@@ -7,4 +7,5 @@
     <string name="shortcut_monthly">Send monthly summary now</string>
     <string name="shortcut_stats">Usage &amp; costs</string>
     <string name="widget_pet_desc">Pet mode: keeps the car at 20 degrees until you unlock it</string>
+    <string name="shortcut_pet">Pet mode settings</string>
 </resources>

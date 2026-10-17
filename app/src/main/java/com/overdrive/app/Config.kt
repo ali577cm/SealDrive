@@ -33,6 +33,34 @@ object Config {
         return true
     }
 
+    // ---- pet mode (see PetSettingsActivity) ----
+
+    /** Cabin temperature (C) pet mode holds. */
+    fun petTemp(c: Context): Float = prefs(c).getFloat("petTemp", 20f)
+
+    /** Pet mode stops and warns at or below this battery %. */
+    fun petMinSoc(c: Context): Int = prefs(c).getInt("petMinSoc", 30)
+
+    /** Show the Screen Deterrent picture on the car screen while pet mode runs. */
+    fun petPicture(c: Context): Boolean = prefs(c).getBoolean("petPicture", true)
+
+    /** Car screen brightness % pet mode sets; 0 = leave the brightness alone. */
+    fun petBrightness(c: Context): Int = prefs(c).getInt("petBrightness", 100)
+
+    /** Switch Child Presence Detection off while pet mode runs (restored afterwards). */
+    fun petCpdOff(c: Context): Boolean = prefs(c).getBoolean("petCpdOff", true)
+
+    /** Saves the pet mode settings; returns an error message, or null when everything was valid and saved. */
+    fun setPet(c: Context, temp: String, minSoc: String, picture: Boolean, brightness: Int, cpdOff: Boolean): String? {
+        val t = temp.trim().replace(',', '.').toFloatOrNull()
+        if (t == null || t < 17f || t > 33f) return "Temperature must be 17 to 33"
+        val s = minSoc.trim().toIntOrNull()
+        if (s == null || s < 15 || s > 80) return "Stop battery must be 15 to 80"
+        prefs(c).edit().putFloat("petTemp", t).putInt("petMinSoc", s).putBoolean("petPicture", picture)
+            .putInt("petBrightness", brightness.coerceIn(0, 100)).putBoolean("petCpdOff", cpdOff).apply()
+        return null
+    }
+
     /** A charge Overdrive missed, entered by hand from the charger app (kWh = energy delivered, i.e. at the meter). */
     class Manual(val id: Long, val start: Long, val end: Long, val kwh: Double)
 

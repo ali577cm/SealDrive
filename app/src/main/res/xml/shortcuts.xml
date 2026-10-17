@@ -33,4 +33,15 @@
             android:targetClass="com.overdrive.app.MainActivity"
             android:targetPackage="com.overdrive.app" />
     </shortcut>
+    <shortcut
+        android:shortcutId="pet"
+        android:enabled="true"
+        android:icon="@drawable/ic_pet"
+        android:shortcutShortLabel="@string/shortcut_pet"
+        android:shortcutLongLabel="@string/shortcut_pet">
+        <intent
+            android:action="com.overdrive.app.PET_SETTINGS"
+            android:targetClass="com.overdrive.app.MainActivity"
+            android:targetPackage="com.overdrive.app" />
+    </shortcut>
 </shortcuts>
